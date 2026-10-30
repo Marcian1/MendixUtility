@@ -38,7 +38,7 @@ A throwaway Java action logged raw log lines and `IProfiler` calls while microfl
 
 ## FlowScope module (2026-10-30)
 
-Persists slow microflow runs and shows them in an expandable list (`FlowScope.Executions`). Capture is Java (`javasource/flowscope/implementation`), the rest is MDL (`mdlsource/04`-`08`).
+Persists slow microflow runs and shows them in an expandable list (`FlowScope.Executions`). Capture is Java (`javasource/flowscope/implementation`), the rest is MDL (`mdlsource/04`-`09`).
 
 - **How capture works:** the `MicroflowEngine` log (TRACE, subscribed in code) gives microflow start/finish and activities with their timestamps; `IProfiler.enterDatabase/finishDatabase` gives each statement and its duration; both carry the request's execution GUID, which joins them. Only the entry-point microflow is judged against the threshold; its sub-flows are kept with it. Finished runs go to a queue and a writer thread saves them, so the profiled request never waits for the database.
 - **Verified in the running app (HSQLDB, 11.12.5):** a deliberately slow microflow (1.9 s, two sub-flow calls, a while loop with 8 retrieves) was captured with the right totals (11 selects), the sub-flows at 0.3 s each, the loop at 1.35 s flagged as the hot step, and statements with `?` placeholders and per-statement time. Retention cleanup (`SUB_DeleteOldExecutions`) is scheduled nightly but was **not** run against old data; the runs in the app were minutes old.
@@ -47,9 +47,20 @@ Persists slow microflow runs and shows them in an expandable list (`FlowScope.Ex
 - **Only one profiler can be registered.** If NanoProfiler is started with `UseIProfiler`, FlowScope logs a warning and still captures runs, without statements.
 - `IProfiler.enterRuntime/finishRuntime` are never called on 11.12.5 (see spike section); not used.
 - **Gallery text filter** rendered "Unable to get filter store" when written through MDL, so the page uses a List view with its built-in search (`SEARCH BY`). Sorting is fixed (slowest first).
-- **Page state** (`IsExpanded`) is an attribute on `Execution` changed in a nanoflow and never committed; the list does not refresh after pop-up actions such as "Add demo data" until the page is reloaded.
+- **Page state** (`IsExpanded`) is an attribute on `Execution` changed in a nanoflow and never committed; the list does not refresh after actions such as running the sample flow until you press refresh in the search bar.
 - **Text widgets only show attributes**, so durations are stored as seconds (Decimal) rather than computed.
 - `mxcli run --local` needs `--db-type hsqldb` here (no PostgreSQL). `mxcli check`'s `RETRIEVE ... LIMIT 1` returns a list; use `FIRST` for one object.
 - **Lint leaves** CONV006 (create/delete granted: the demo-data and delete-all microflows run as the developer), CONV007 (single developer role sees all rows, by design), CONV002 (defaults), CONV016 (event handler on Settings applies a saved change at once) and CUSTOM002 (`ASU_` prefix). Report score 82/100.
-- `demo_user` is the prototype's user; `flowscope_dev` (Administrator role, which holds `FlowScope.Developer`) is the local test login in `mdlsource/07_flowscope_demo_user.mdl`.
-- `mdlsource/06_flowscope_navigation.mdl` owns the whole Responsive menu; keep it in step with `02_foldercreator_pages.mdl`.
+- `demo_user` is the prototype's user; `flowscope_dev` (Administrator role, which holds `FlowScope.Developer`) is the local test login in `mdlsource/08_flowscope_demo_user.mdl`.
+- `mdlsource/07_flowscope_navigation.mdl` owns the whole Responsive menu; keep it in step with `02_foldercreator_pages.mdl`.
+
+### FlowScope sample flow and demo data (2026-10-30)
+
+- **Demo data is gone** (button, `ACT_CreateDemoData`, `SUB_AddDemoExecution`). Use `FlowScope.SAMPLE_RunFlow` (button "Run sample flow", `mdlsource/05_flowscope_sample.mdl`) instead: it builds and deletes `FlowScope.SampleItem` rows and runs about 4 s of sub-flows, so the page shows real captured data.
+- **Verified:** one run was captured with 49 steps to depth 4: create list, while loop, commit, four kinds of retrieve, count/sum/average, filter, sort, head, find, a loop with 40 selects (1.9 s, flagged hot), a loop with 30 updates, a caught division error (decision took the error branch), a 1.4 s call two levels deep, and the delete. The Queries tab showed the same select 41 times (the N+1) and 30 identical updates.
+- **Known gap: the 40 deletes of the cleanup step are not counted** (no DELETE statement among the captured statements). Not investigated; likely issued outside the window or request id the engine watches.
+- **List view page size** is 20 by default, which cut a 49-step breakdown to 20 rows; steps now use 500 and queries 200 (matches `RunBuilder.MAX_STEPS`/`MAX_QUERIES`).
+- **Default exclude pattern is now `^NanoProfiler\.`** (it was `^(FlowScope|NanoProfiler)\.`), so FlowScope's own flows, the sample included, can be captured. The old default would have hidden the sample.
+- The sample's entry flow is `SAMPLE_`, not `ACT_`, because lint CONV010 wants `ACT_` flows to delegate to `SUB_` and the sample shows every activity type on purpose. Report score 78/100 (was 82 before the sample).
+- The Save button on `Settings_Popup` is `save changes close page` (set in the app, now in `06_flowscope_pages.mdl`).
+- Browser-pane clicks by element reference can land off target; clicking by screenshot coordinates or repeating the click works.

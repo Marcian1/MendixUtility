@@ -78,8 +78,8 @@ CREATE OR MODIFY PERSISTENT ENTITY FlowScope.Settings (
   RetentionDays: Integer DEFAULT 14,
   /** Regular expression: only matching microflows are profiled. Empty = all. */
   IncludeRegexp: String(500),
-  /** Regular expression: matching microflows are never profiled. */
-  ExcludeRegexp: String(500) DEFAULT '^(FlowScope|NanoProfiler)\.'
+  /** Regular expression: matching microflows are never profiled. By default only NanoProfiler's own, which would clash for the profiler hook. */
+  ExcludeRegexp: String(500) DEFAULT '^NanoProfiler\.'
 );
 
 CREATE OR MODIFY MODULE ROLE FlowScope.Developer DESCRIPTION 'Sees and configures the profiler';

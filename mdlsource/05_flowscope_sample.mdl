@@ -1,0 +1,164 @@
+mdl 1;
+
+-- A sample flow to try FlowScope on. Run it from the "Run sample flow" button; a few seconds later it appears
+-- in the list (press refresh in the search bar) with every step below broken down.
+--
+-- Tree, with rough time:
+--   SAMPLE_RunFlow                       ~ 4.5 s   decision, log messages, variables, sub-flow calls
+--     SUB_Sample_Prepare                    ~ 0.2 s   create list, while loop, create objects, commit list
+--     SUB_Sample_ReadQueries                ~ 0.3 s   retrieves (all, where+sort, first, range), aggregates, list operations
+--     SUB_Sample_NPlusOne                   ~ 1.3 s   loop with one retrieve per item - the slow step, 40 identical selects
+--     SUB_Sample_Transform                  ~ 0.4 s   loop with decision, change and commit per item - 30 updates
+--     SUB_Sample_HandledError               ~ 0.0 s   an error caught by a custom handler
+--     SUB_Sample_ExternalCall               ~ 1.6 s   slow call, then two levels deeper
+--       SUB_Sample_Deep                     ~ 0.3 s
+--         SUB_Sample_Deeper                 ~ 0.2 s
+--     SUB_Sample_Cleanup                    ~ 0.0 s   retrieve and delete
+-- The waits are CommunityCommons.Delay, so the times are the same on any machine.
+
+/** Rows the sample flow creates and deletes again, so the table is empty between runs. */
+CREATE OR MODIFY PERSISTENT ENTITY FlowScope.SampleItem (
+  Name: String(100) NOT NULL UNIQUE,
+  Category: String(50),
+  Quantity: Integer DEFAULT 0,
+  Price: Decimal DEFAULT 0
+)
+INDEX (Name);
+
+GRANT CREATE, DELETE, READ *, WRITE * ON ENTITY FlowScope.SampleItem TO FlowScope.Developer;
+
+/** Create list, while loop, create objects and one commit of the whole list. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_Sample_Prepare ()
+FOLDER 'Samples'
+BEGIN
+  $Items = CREATE LIST OF FlowScope.SampleItem;
+  DECLARE $I Integer = 0;
+  WHILE $I < 40
+  BEGIN
+    $New = CREATE FlowScope.SampleItem (
+      Name = 'Item ' + toString($I),
+      Category = if $I mod 4 = 0 then 'Hardware' else 'Software',
+      Quantity = $I * 3,
+      Price = 9.5 + $I
+    );
+    ADD $New TO $Items;
+    SET $I = $I + 1;
+  END WHILE;
+  COMMIT $Items;
+  $Waited = CALL JAVA ACTION CommunityCommons.Delay(delaytime = 150);
+END;
+
+/** Retrieve in four ways, aggregate, and the list operations. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_Sample_ReadQueries ()
+FOLDER 'Samples'
+BEGIN
+  RETRIEVE $All FROM FlowScope.SampleItem;
+  RETRIEVE $Many FROM FlowScope.SampleItem WHERE Quantity > 30 SORT BY Name ASC;
+  RETRIEVE $One FROM FlowScope.SampleItem WHERE Name = 'Item 7' FIRST;
+  RETRIEVE $Page FROM FlowScope.SampleItem SORT BY Price DESC LIMIT 10 OFFSET 5;
+  $Count = count $All;
+  $Total = sum $All by Price;
+  $AverageQuantity = average $All by Quantity;
+  $Hardware = FILTER $All WHERE $currentObject/Category = 'Hardware';
+  $ByPrice = SORT $All BY Price DESC;
+  $Dearest = HEAD $ByPrice;
+  $Twelve = FIND $All WHERE $currentObject/Name = 'Item 12';
+  LOG INFO NODE 'FlowScopeSample' 'Read {1} items, total price {2}.' WITH ({1} = toString($Count), {2} = toString($Total));
+  $Waited = CALL JAVA ACTION CommunityCommons.Delay(delaytime = 200);
+END;
+
+/** One select per item inside a loop: the same statement 40 times. Shows up as the slow step and as 40x on the Queries tab. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_Sample_NPlusOne ()
+FOLDER 'Samples'
+BEGIN
+  RETRIEVE $All FROM FlowScope.SampleItem;
+  LOOP $Item IN $All
+  BEGIN
+    RETRIEVE $Same FROM FlowScope.SampleItem WHERE Name = $Item/Name FIRST;
+    $Waited = CALL JAVA ACTION CommunityCommons.Delay(delaytime = 30);
+  END LOOP;
+END;
+
+/** A loop with a decision, a change and a commit per item: one update statement per item. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_Sample_Transform ()
+FOLDER 'Samples'
+BEGIN
+  RETRIEVE $Software FROM FlowScope.SampleItem WHERE Category = 'Software';
+  DECLARE $Raised Integer = 0;
+  LOOP $Item IN $Software
+  BEGIN
+    IF $Item/Quantity > 60 THEN
+      CHANGE $Item (Price = $Item/Price * 1.1);
+      SET $Raised = $Raised + 1;
+    ELSE
+      CHANGE $Item (Price = $Item/Price * 0.95);
+    END IF;
+    COMMIT $Item;
+  END LOOP;
+  LOG INFO NODE 'FlowScopeSample' 'Raised the price of {1} items.' WITH ({1} = toString($Raised));
+  $Waited = CALL JAVA ACTION CommunityCommons.Delay(delaytime = 100);
+END;
+
+/** Division by zero, caught by a custom error handler. Returns false when it was caught. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_Sample_HandledError ()
+RETURNS Boolean AS $Ok
+FOLDER 'Samples'
+BEGIN
+  DECLARE $Zero Integer = 0;
+  DECLARE $Bad Decimal = 10 div $Zero ON ERROR BEGIN
+    LOG WARNING NODE 'FlowScopeSample' 'Caught a division by zero on purpose.';
+    RETURN false;
+  END ERROR;
+  RETURN true;
+END;
+
+/** The slowest call, standing in for a web service, then two levels deeper. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_Sample_ExternalCall ()
+FOLDER 'Samples'
+BEGIN
+  $Waited = CALL JAVA ACTION CommunityCommons.Delay(delaytime = 1100);
+  CALL MICROFLOW FlowScope.SUB_Sample_Deep();
+END;
+
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_Sample_Deep ()
+FOLDER 'Samples'
+BEGIN
+  $Waited = CALL JAVA ACTION CommunityCommons.Delay(delaytime = 100);
+  CALL MICROFLOW FlowScope.SUB_Sample_Deeper();
+END;
+
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_Sample_Deeper ()
+FOLDER 'Samples'
+BEGIN
+  RETRIEVE $Any FROM FlowScope.SampleItem LIMIT 5;
+  $Waited = CALL JAVA ACTION CommunityCommons.Delay(delaytime = 200);
+END;
+
+/** Retrieve and delete a list. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_Sample_Cleanup ()
+FOLDER 'Samples'
+BEGIN
+  RETRIEVE $Items FROM FlowScope.SampleItem;
+  DELETE $Items;
+END;
+
+/** The entry point: runs everything above. Its run is what FlowScope keeps. */
+CREATE OR MODIFY MICROFLOW FlowScope.SAMPLE_RunFlow ()
+FOLDER 'Samples'
+BEGIN
+  LOG INFO NODE 'FlowScopeSample' 'Sample flow starting.';
+  DECLARE $Started DateTime = [%CurrentDateTime%];
+  CALL MICROFLOW FlowScope.SUB_Sample_Prepare();
+  CALL MICROFLOW FlowScope.SUB_Sample_ReadQueries();
+  CALL MICROFLOW FlowScope.SUB_Sample_NPlusOne();
+  CALL MICROFLOW FlowScope.SUB_Sample_Transform();
+  $Handled = CALL MICROFLOW FlowScope.SUB_Sample_HandledError();
+  IF $Handled THEN
+    LOG INFO NODE 'FlowScopeSample' 'No error to handle.';
+  ELSE
+    LOG INFO NODE 'FlowScopeSample' 'The error was handled and the flow carried on.';
+  END IF;
+  CALL MICROFLOW FlowScope.SUB_Sample_ExternalCall();
+  CALL MICROFLOW FlowScope.SUB_Sample_Cleanup();
+  LOG INFO NODE 'FlowScopeSample' 'Sample flow finished.';
+END;

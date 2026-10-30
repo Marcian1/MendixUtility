@@ -30,55 +30,6 @@ BEGIN
   RETRIEVE $All FROM FlowScope.Execution;
   DELETE $All;
 END;
-
-/** Adds one made-up run with a small call tree and two statements, so the page can be tried before capture is on. */
-CREATE OR MODIFY MICROFLOW FlowScope.SUB_AddDemoExecution (
-  $Name: String,
-  $Seconds: Decimal,
-  $Selects: Long,
-  $Updates: Long,
-  $HeapDelta: Long
-)
-BEGIN
-  $Run = CREATE FlowScope.Execution (
-    StartedAt = [%CurrentDateTime%],
-    MicroflowName = $Name,
-    DurationSeconds = $Seconds,
-    SelectCount = $Selects,
-    UpdateCount = $Updates,
-    SubflowCount = 1,
-    HeapStartMB = 900,
-    HeapEndMB = 900 + $HeapDelta,
-    HeapDeltaMB = $HeapDelta,
-    ExecutionId = 'demo',
-    NodeName = 'demo'
-  );
-  COMMIT $Run;
-  $S1 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 1, Depth = 0, Kind = FlowScope.StepKind.Microflow, Name = $Name, DurationSeconds = $Seconds, SelectCount = $Selects, UpdateCount = $Updates, SharePercent = 100);
-  $S2 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 2, Depth = 1, Kind = FlowScope.StepKind.Activity, Name = 'Retrieve list from database', DurationSeconds = $Seconds * 0.15, SelectCount = 1, UpdateCount = 0, SharePercent = 15);
-  $S3 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 3, Depth = 1, Kind = FlowScope.StepKind.Activity, Name = 'Loop: retrieve Product', DurationSeconds = $Seconds * 0.55, SelectCount = $Selects, UpdateCount = 0, SharePercent = 55);
-  $S4 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 4, Depth = 1, Kind = FlowScope.StepKind.Microflow, Name = 'Orders.SUB_Calculate', DurationSeconds = $Seconds * 0.2, SelectCount = 0, UpdateCount = $Updates, SharePercent = 20);
-  $S5 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 5, Depth = 2, Kind = FlowScope.StepKind.Activity, Name = 'Commit Order', DurationSeconds = $Seconds * 0.1, SelectCount = 0, UpdateCount = $Updates, SharePercent = 10);
-  $Q1 = CREATE FlowScope.ExecutionQuery (ExecutionQuery_Execution = $Run, Statement = 'SELECT x1.id, x1.name, x1.price FROM orders$product x1 WHERE x1.id = ?', RunCount = $Selects, AvgMs = 4.2, TotalSeconds = $Seconds * 0.5);
-  $Q2 = CREATE FlowScope.ExecutionQuery (ExecutionQuery_Execution = $Run, Statement = 'UPDATE orders$order SET total = ?, changeddate = ? WHERE id = ?', RunCount = $Updates, AvgMs = 2.1, TotalSeconds = $Seconds * 0.1);
-  COMMIT $S1;
-  COMMIT $S2;
-  COMMIT $S3;
-  COMMIT $S4;
-  COMMIT $S5;
-  COMMIT $Q1;
-  COMMIT $Q2;
-END;
-
-CREATE OR MODIFY MICROFLOW FlowScope.ACT_CreateDemoData ()
-BEGIN
-  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'Orders.ACT_Order_Submit', Seconds = 1.2, Selects = 4, Updates = 3, HeapDelta = 12);
-  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'Customers.ACT_Customer_Import', Seconds = 7.4, Selects = 120, Updates = 120, HeapDelta = -38);
-  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'Admin.ACT_Report_Generate', Seconds = 11.8, Selects = 6, Updates = 1, HeapDelta = 85);
-  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'Integration.REST_GetInvoices', Seconds = 3.4, Selects = 2, Updates = 0, HeapDelta = 4);
-  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'FolderCreator.ACT_CreateFolders', Seconds = 2.2, Selects = 1, Updates = 3, HeapDelta = -2);
-END;
-
 /** The full statement, as a read-only text. */
 CREATE OR MODIFY PAGE FlowScope.Query_Popup (
   Params: ($Query: FlowScope.ExecutionQuery),
@@ -131,10 +82,9 @@ CREATE OR MODIFY PAGE FlowScope.Settings_Popup (
     textbox txtInclude (Label: 'Only profile microflows matching (regular expression)', Attribute: IncludeRegexp)
     textbox txtExclude (Label: 'Never profile microflows matching (regular expression)', Attribute: ExcludeRegexp)
     container ctnFoot {
-      actionbutton btnDemo (Caption: 'Add demo data', Action: call microflow FlowScope.ACT_CreateDemoData)
       actionbutton btnDeleteAll (Caption: 'Delete all captured runs', Action: call microflow FlowScope.ACT_DeleteAllExecutions, ButtonStyle: danger)
       actionbutton btnCancel (Caption: 'Cancel', Action: cancel changes)
-      actionbutton btnSave (Caption: 'Save', Action: save changes, ButtonStyle: primary)
+      actionbutton btnSave (Caption: 'Save', Action: save changes close page, ButtonStyle: primary)
     }
   }
   } } }
@@ -153,6 +103,7 @@ CREATE OR MODIFY PAGE FlowScope.Executions (
         container ctnCard (Class: 'fs-card') {
           container ctnBar (Class: 'fs-toolbar') {
             actionbutton btnSettings (Caption: 'Settings', Action: call microflow FlowScope.ACT_OpenSettings)
+            actionbutton btnSample (Caption: 'Run sample flow', Action: call microflow FlowScope.SAMPLE_RunFlow)
           }
           container ctnColHead (Class: 'fs-cols fs-colhead') {
             dynamictext hCaret (Content: ' ')
@@ -217,7 +168,7 @@ CREATE OR MODIFY PAGE FlowScope.Executions (
                           dynamictext shTook (Content: 'Took (s)', Class: 'fs-num')
                           dynamictext shShare (Content: 'Share of run')
                         }
-                        listview lvSteps (DataSource: DATABASE FROM $currentObject/FlowScope.ExecutionStep_Execution/FlowScope.ExecutionStep SORT BY Seq ASC) {
+                        listview lvSteps (DataSource: DATABASE FROM $currentObject/FlowScope.ExecutionStep_Execution/FlowScope.ExecutionStep SORT BY Seq ASC, PageSize: 500) {
                           container ctnStep (
                             Class: 'fs-step',
                             DynamicClasses: if $currentObject/Kind = FlowScope.StepKind.Microflow then 'fs-step--mf' else ''
@@ -250,7 +201,7 @@ CREATE OR MODIFY PAGE FlowScope.Executions (
                           dynamictext qhTotal (Content: 'Total (s)', Class: 'fs-num')
                           dynamictext qhSql (Content: 'Statement - click to open in full')
                         }
-                        listview lvQueries (DataSource: DATABASE FROM $currentObject/FlowScope.ExecutionQuery_Execution/FlowScope.ExecutionQuery SORT BY TotalSeconds DESC) {
+                        listview lvQueries (DataSource: DATABASE FROM $currentObject/FlowScope.ExecutionQuery_Execution/FlowScope.ExecutionQuery SORT BY TotalSeconds DESC, PageSize: 200) {
                           container ctnQuery (
                             Class: 'fs-query',
                             OnClick: show page FlowScope.Query_Popup(Query = $currentObject)
@@ -279,7 +230,6 @@ GRANT VIEW ON PAGE FlowScope.Query_Popup TO FlowScope.Developer;
 GRANT EXECUTE ON MICROFLOW FlowScope.SUB_GetSettings TO FlowScope.Developer;
 GRANT EXECUTE ON MICROFLOW FlowScope.ACT_OpenSettings TO FlowScope.Developer;
 GRANT EXECUTE ON MICROFLOW FlowScope.ACT_DeleteAllExecutions TO FlowScope.Developer;
-GRANT EXECUTE ON MICROFLOW FlowScope.SUB_AddDemoExecution TO FlowScope.Developer;
-GRANT EXECUTE ON MICROFLOW FlowScope.ACT_CreateDemoData TO FlowScope.Developer;
+GRANT EXECUTE ON MICROFLOW FlowScope.SAMPLE_RunFlow TO FlowScope.Developer;
 GRANT EXECUTE ON NANOFLOW FlowScope.NAN_ToggleExpanded TO FlowScope.Developer;
 
