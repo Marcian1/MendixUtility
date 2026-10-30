@@ -1,0 +1,81 @@
+mdl 1;
+
+CREATE MODULE FolderIntegration;
+
+CREATE ENUMERATION FolderIntegration.JobStatus (
+  Ready 'Ready',
+  Running 'Running',
+  Failed 'Failed',
+  Done 'Done'
+);
+
+CREATE ENUMERATION FolderIntegration.NodeStatus (
+  Pending 'Pending',
+  Checking 'Working',
+  Created 'Created',
+  Reused 'Already existed',
+  Failed 'Failed'
+);
+
+CREATE ENUMERATION FolderIntegration.Scenario (
+  AllSucceed 'All succeed',
+  FailAtQ4 'Fail at Q4',
+  TopFoldersExist 'Top folders already exist'
+);
+
+CREATE ENUMERATION FolderIntegration.Speed (
+  Slow 'Slow',
+  Normal 'Normal',
+  Fast 'Fast'
+);
+
+/** One run of the "create folder structure" integration. Also carries the prototype controls (Scenario, Speed) and the texts the pop-up shows. */
+CREATE PERSISTENT ENTITY FolderIntegration.FolderJob (
+  RootFolder: String(200) DEFAULT 'Contracts',
+  Status: Enumeration(FolderIntegration.JobStatus) DEFAULT FolderIntegration.JobStatus.Ready,
+  Scenario: Enumeration(FolderIntegration.Scenario) DEFAULT FolderIntegration.Scenario.AllSucceed,
+  Speed: Enumeration(FolderIntegration.Speed) DEFAULT FolderIntegration.Speed.Normal,
+  NameChecks: Integer DEFAULT 0,
+  ItemsCreated: Integer DEFAULT 0,
+  DoneCount: Integer DEFAULT 0,
+  TotalCount: Integer DEFAULT 0,
+  ProgressPercent: Integer DEFAULT 0,
+  FixedAfterRetry: Boolean DEFAULT false,
+  FailedPath: String(500),
+  StructureSummary: String(200),
+  StatusChip: String(100),
+  PrimaryCaption: String(100) DEFAULT 'Create folders',
+  SummaryTitle: String(100),
+  SummaryCount: String(100),
+  BannerKind: String(20),
+  BannerText: String(1000)
+);
+
+/** One folder or file of the planned structure. */
+CREATE PERSISTENT ENTITY FolderIntegration.FolderNode (
+  Name: String(200),
+  Depth: Integer DEFAULT 0,
+  IsFolder: Boolean DEFAULT true,
+  Sequence: Integer DEFAULT 0,
+  ParentSequence: Integer DEFAULT -1,
+  Status: Enumeration(FolderIntegration.NodeStatus) DEFAULT FolderIntegration.NodeStatus.Pending,
+  StatusIcon: String(10),
+  KindIcon: String(10),
+  SimulateFailure: Boolean DEFAULT false,
+  FullPath: String(500)
+)
+INDEX (Sequence);
+
+CREATE ASSOCIATION FolderIntegration.FolderNode_FolderJob
+  FROM FolderIntegration.FolderNode TO FolderIntegration.FolderJob
+  TYPE Reference
+  ON DELETE CASCADE;
+
+/** What a placeholder REST call would return: the HTTP status and a message. */
+CREATE NON-PERSISTENT ENTITY FolderIntegration.RestResponse (
+  Method: String(10),
+  Endpoint: String(500),
+  StatusCode: Integer,
+  IsSuccess: Boolean,
+  Message: String(500)
+);
