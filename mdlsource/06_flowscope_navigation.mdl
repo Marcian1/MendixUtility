@@ -1,0 +1,10 @@
+mdl 1;
+
+-- The whole Responsive menu in one place, so this script can be run again without adding duplicates.
+-- (02_foldercreator_pages.mdl defines the first item; keep the two in step.)
+CREATE OR MODIFY NAVIGATION Responsive
+  HOME PAGE FolderCreator.Home
+{
+  MENU ITEM 'Contract documents' ( OnClick: SHOW PAGE FolderCreator.Home, Icon: GLYPH 57377 )
+  MENU ITEM 'Microflow profiler' ( OnClick: SHOW PAGE FlowScope.Executions, Icon: GLYPH 57457 )
+};

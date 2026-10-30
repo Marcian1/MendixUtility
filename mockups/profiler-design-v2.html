@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow Profiler – Draft 2</title>
+<style>
+/* Atlas UI tokens (Mendix default theme) */
+:root{
+  --brand-primary:#264AE5; --brand-success:#3CB33D; --brand-warning:#F99B1D; --brand-danger:#E33F4E; --brand-info:#0B8FD8;
+  --gray-darker:#0A1325; --gray-dark:#3B4252; --gray:#6C7180; --gray-light:#CED0D3; --gray-lighter:#E7E8EA; --gray-lightest:#F5F6F6; --bg:#F8F8F8;
+  --radius:4px; --font:"Open Sans","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 var(--font);color:var(--gray-darker);background:var(--bg)}
+.topbar{background:var(--gray-darker);color:#fff;height:56px;display:flex;align-items:center;padding:0 20px;gap:12px}
+.topbar .sp{flex:1}.topbar small{color:var(--gray-light)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--brand-success);display:inline-block;margin-right:6px}
+.content{padding:24px;max-width:1280px;margin:0 auto}
+h2{margin:0 0 4px;font-size:22px}.sub{color:var(--gray);margin:0 0 16px}
+.card{background:#fff;border:1px solid var(--gray-lighter);border-radius:var(--radius);padding:16px}
+.form-control{height:34px;padding:0 10px;border:1px solid var(--gray-light);border-radius:var(--radius);font:inherit;background:#fff}
+.form-control:focus{outline:2px solid var(--brand-primary);outline-offset:-1px;border-color:var(--brand-primary)}
+.toolbar{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.toolbar input{flex:1;min-width:220px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chip{border:1px solid var(--gray-light);background:#fff;border-radius:16px;padding:3px 12px;cursor:pointer;font-size:13px;color:var(--gray-dark)}
+.chip:hover{background:var(--gray-lightest)}.chip.on{background:var(--brand-primary);border-color:var(--brand-primary);color:#fff}
+.chip small{opacity:.75;margin-left:4px}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.b-success{background:var(--brand-success)}.b-warning{background:var(--brand-warning)}.b-danger{background:var(--brand-danger)}.b-muted{background:var(--gray-lighter);color:var(--gray-dark)}
+table{width:100%;border-collapse:collapse}
+th{background:var(--gray-lightest);text-align:left;font-size:12px;color:var(--gray-dark);padding:10px 12px;border-bottom:2px solid var(--gray-lighter);cursor:pointer;user-select:none;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--gray-lighter)}
+tr.main{cursor:pointer}tr.main:hover,tr.main.open{background:#EEF1FD}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.mono{font-family:Consolas,monospace;font-size:13px}.muted{color:var(--gray)}
+.caret{display:inline-block;width:14px;color:var(--gray);transition:transform .15s}.open .caret{transform:rotate(90deg)}
+.flag{color:var(--brand-warning);font-weight:700;margin-left:6px;cursor:help}
+tr.detail>td{padding:0;background:var(--gray-lightest)}
+.panel{padding:12px 16px 16px 38px}
+.facts{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px}
+.facts div{font-size:12px;color:var(--gray)}.facts b{display:block;font-size:15px;color:var(--gray-darker)}
+.tabs{display:flex;border-bottom:1px solid var(--gray-lighter);margin-bottom:8px}
+.tabs a{padding:6px 14px;cursor:pointer;color:var(--gray);font-size:13px}.tabs a.on{color:var(--brand-primary);border-bottom:2px solid var(--brand-primary);font-weight:600}
+.step{display:grid;grid-template-columns:minmax(260px,1fr) 70px 70px 90px 160px;gap:10px;padding:4px 8px;border-bottom:1px solid var(--gray-lighter);align-items:center;font-size:13px}
+.step.head{color:var(--gray);font-size:12px;font-weight:600}.step:last-child{border:0}
+.step.mf{background:#fff;font-weight:600}
+.step .num{text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:8px;background:var(--gray-lighter);border-radius:4px;position:relative}.bar i{position:absolute;top:0;height:100%;border-radius:4px;background:var(--brand-primary)}
+.bar i.hot{background:var(--brand-warning)}
+.sql{display:grid;grid-template-columns:70px 1fr;gap:10px;padding:5px 8px;border-bottom:1px solid var(--gray-lighter);font-size:13px}
+.sql .mono{word-break:break-all}
+.hidden{display:none}
+.lbl{display:block;font-size:12px;font-weight:600;color:var(--gray);margin-bottom:2px}
+.btn-primary{background:var(--brand-primary);border-color:var(--brand-primary);color:#fff}.btn-primary:hover{background:#1D39B8}
+.toolbar .muted{font-size:13px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--gray-dark);padding:2px 8px 8px}
+.legend .lg{display:inline-block;width:14px;height:8px;border-radius:4px;margin-right:6px}
+.sqlrow{display:grid;grid-template-columns:70px 80px 80px 1fr;gap:12px;padding:6px 8px;border-bottom:1px solid var(--gray-lighter);align-items:center;font-size:13px}
+.sqlrow.head{color:var(--gray);font-size:12px;font-weight:600}.sqlrow.click{cursor:pointer}.sqlrow.click:hover{background:#fff}
+.sqlrow .num{text-align:right}.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.modal-bg{position:fixed;inset:0;background:rgba(10,19,37,.5);display:flex;align-items:center;justify-content:center;z-index:10}
+.modal{background:#fff;border-radius:6px;width:min(760px,92vw);max-height:86vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--gray-lighter);font-weight:600}
+.modal header span{cursor:pointer;font-size:20px;color:var(--gray)}
+.modal pre{margin:0;padding:16px 18px;overflow:auto;background:var(--gray-lightest);font:13px/1.5 Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+.modal footer{padding:12px 18px;border-top:1px solid var(--gray-lighter);display:flex;gap:8px;justify-content:space-between;align-items:center}
+.modal .st{display:flex;gap:24px;padding:12px 18px;border-bottom:1px solid var(--gray-lighter)}.modal .st div{font-size:12px;color:var(--gray)}.modal .st b{display:block;font-size:15px;color:var(--gray-darker)}
+.settings{display:flex;gap:24px;flex-wrap:wrap;background:var(--gray-lightest);border:1px solid var(--gray-lighter);border-radius:var(--radius);padding:12px 16px;margin-bottom:12px}
+.settings label{display:block;font-size:12px;font-weight:600;color:var(--gray);margin-bottom:2px}
+.pager{display:flex;justify-content:space-between;align-items:center;padding-top:12px;color:var(--gray)}
+.btn{height:34px;padding:0 14px;border-radius:var(--radius);border:1px solid var(--gray-light);background:#fff;font:inherit;cursor:pointer}.btn:hover{background:var(--gray-lightest)}
+label.chk{display:flex;align-items:center;gap:6px;color:var(--gray-dark);font-size:13px}
+</style>
+</head>
+<body>
+<div class="topbar"><b>⏱ Flow Profiler</b><small>MendixUtility</small><span class="sp"></span><span><span class="dot"></span>Capturing · slower than 100 ms · 2 modules</span></div>
+<main class="content">
+  <h2>Microflow executions</h2>
+  <p class="sub">Every captured run, newest first. Click a row to see what it called and where the time and queries went.</p>
+  <div class="card">
+    <div class="toolbar">
+      <input id="q" class="form-control" placeholder="Search microflow name…">
+      <span class="muted" id="cfgInfo"></span>
+      <button class="btn" id="cfgBtn">⚙ Settings</button>
+    </div>
+    <table><thead><tr>
+      <th></th><th data-s="t">Started</th><th data-s="name">Microflow</th><th class="num" data-s="s">Duration (s) ▾</th><th class="num" data-s="sel">Selects</th><th class="num" data-s="upd">Updates</th><th class="num" data-s="calls">Sub-flows</th><th class="num" data-s="memD" title="Server memory at the end minus at the start, in MB. Minus = memory was freed during the run. Shared by all requests, so a rough hint.">Heap Δ (MB)</th><th data-s="exec">Execution id</th></tr></thead>
+      <tbody id="rows"></tbody></table>
+    <div class="pager"><span id="count"></span><span><button class="btn" id="prev">‹ Previous</button> <button class="btn" id="next">Next ›</button></span></div>
+  </div>
+</main>
+
+<script>
+let seed=5;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const $=s=>document.querySelector(s);
+const now=Date.now();
+// flow templates: [name, base seconds, children (names), activities [caption, weight, selects, updates, repeatSql?]]
+const T={
+ "Orders.ACT_Order_Submit":{s:1.2,kids:["Orders.SUB_Order_Calculate","Orders.SUB_Order_Validate"],acts:[["Retrieve Order",.1,1,0],["Change Order",.02,0,0],["Commit Order",.15,0,2]]},
+ "Orders.SUB_Order_Calculate":{s:.6,kids:[],acts:[["Retrieve OrderLines",.2,1,0],["Loop OrderLines → Retrieve Product",.6,40,0,"SELECT … FROM orders$product WHERE id = ?"],["Commit OrderLines",.2,0,1]]},
+ "Orders.SUB_Order_Validate":{s:.12,kids:[],acts:[["Retrieve Customer",.7,1,0],["Validation feedback",.3,0,0]]},
+ "Orders.DS_Order_Overview":{s:.25,kids:[],acts:[["Retrieve Orders",.9,2,0],["Create list",.1,0,0]]},
+ "Customers.ACT_Customer_Import":{s:7,kids:["Customers.SUB_Customer_Upsert"],acts:[["Import mapping",.3,0,0],["Loop Customers",.1,0,0],["Commit list",.4,0,1]]},
+ "Customers.SUB_Customer_Upsert":{s:2.4,kids:[],acts:[["Retrieve existing",.4,120,0,"SELECT … FROM customers$customer WHERE externalid = ?"],["Change Customer",.1,0,0],["Commit Customer",.5,0,120]]},
+ "FolderCreator.ACT_CreateFolders":{s:2.2,kids:[],acts:[["Call REST create folder",.8,0,0],["Commit Folder",.2,0,3]]},
+ "Admin.SE_Cleanup_OldData":{s:22,kids:[],acts:[["Retrieve old rows",.3,3,0],["Delete list",.7,0,5000]]},
+ "Admin.ACT_Report_Generate":{s:11,kids:[],acts:[["Retrieve all Orders",.6,4,0],["Aggregate list",.3,0,0],["Commit Report",.1,0,1]]},
+ "Integration.REST_GetInvoices":{s:3.4,kids:[],acts:[["Retrieve Invoices",.5,2,0],["Export mapping",.5,0,0]]}
+};
+const roots=["Orders.ACT_Order_Submit","Orders.DS_Order_Overview","Customers.ACT_Customer_Import","FolderCreator.ACT_CreateFolders","Admin.SE_Cleanup_OldData","Admin.ACT_Report_Generate","Integration.REST_GetInvoices"];
+function build(name,total,depth,off){ // returns {name,s,off,depth,sel,upd,steps,sqls}
+  const t=T[name];const node={name,s:total,off,depth,sel:0,upd:0,steps:[],sqls:{}};
+  const kidShare=t.kids.length?.55:0, own=total*(1-kidShare);
+  let cur=off;
+  t.acts.forEach(([cap,w,sel,upd,rep])=>{const d=+(own*w).toFixed(3);
+    const k=1+rnd()*.3;const sl=Math.round(sel*k),up=Math.round(upd*k);
+    node.steps.push({kind:"act",name:cap,s:d,off:cur,depth:depth+1,sel:sl,upd:up});node.sel+=sl;node.upd+=up;cur+=d;
+    if(rep&&sl>1)node.sqls[rep]=(node.sqls[rep]||0)+sl;
+    else if(sl)node.sqls["SELECT … FROM "+cap.replace(/Retrieve /,"").toLowerCase()]=sl;});
+  const kids=[];let sub={sel:0,upd:0},calls=0;
+  t.kids.forEach(k=>{const d=+(total*kidShare/t.kids.length).toFixed(3);const c=build(k,d,depth+1,cur);
+    kids.push(c);cur+=d;calls+=1+c.calls;node.sel+=c.sel;node.upd+=c.upd;Object.entries(c.sqls).forEach(([q,n])=>node.sqls[q]=(node.sqls[q]||0)+n);});
+  node.calls=calls;node.kids=kids;return node;}
+function flat(n){const out=[{kind:"mf",...n}];
+  const items=[...n.steps.map(s=>({...s})),...n.kids.map(k=>({kind:"mfk",k}))].sort((a,b)=>(a.off??a.k.off)-(b.off??b.k.off));
+  items.forEach(i=>{if(i.kind==="act")out.push(i);else out.push(...flat(i.k));});return out;}
+const data=[];
+for(let i=0;i<90;i++){const r=roots[Math.floor(rnd()*roots.length)];
+  const s=+(T[r].s*(.4+rnd()*1.5)*(rnd()>.92?3:1)).toFixed(2);
+  const tree=build(r,s,0,0);
+  const memStart=Math.round(600+rnd()*500),memD=Math.round((rnd()-.35)*60*Math.min(s,6));
+  data.push({id:i,t:now-rnd()*86400000*3,name:r,s,sel:tree.sel,upd:tree.upd,calls:tree.calls,exec:"1730"+(Math.floor(rnd()*9e8)+1e8)+"-"+(Math.floor(rnd()*30)+1),tree,
+    memStart,memEnd:memStart+memD,memD,memMax:2048,
+    n1:Object.values(tree.sqls).some(n=>n>=20)});}
+const fmt=t=>new Date(t).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+const sc=s=>s>5?"b-danger":s>1?"b-warning":"b-success";
+
+const CFG={thr:1000,days:14};
+const S={page:0,size:12,sort:"s",dir:-1,open:null,tab:"flow"};
+const mem=d=>`${d.memD>0?"+":""}${d.memD}`;
+const sqlAvg=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%997;return 1.5+(h%90)/6;};
+function fullSql(s){const t=(s.match(/FROM\s+(\S+)/)||[,"orders$order"])[1];
+  const hasWhere=/WHERE/.test(s);
+  return `SELECT x1.id,\n       x1.createddate,\n       x1.changeddate,\n       x1.name,\n       x1.status,\n       x1.amount,\n       x1.owner\nFROM ${t} x1\n${hasWhere?"WHERE x1.id = $1":"WHERE x1.status <> $1"}\nORDER BY x1.createddate DESC\nLIMIT 1000;\n\n-- bind values: $1 = ?`;}
+function openSql(s,n,avg){const bg=document.createElement("div");bg.className="modal-bg";
+  const sql=fullSql(s);
+  bg.innerHTML=`<div class="modal"><header>Full query<span id="mx">×</span></header>
+   <div class="st"><div>Times run<b>${n}×</b></div><div>Avg per run<b>${avg.toFixed(1)} ms</b></div><div>Total<b>${(n*avg/1000).toFixed(2)} s</b></div></div>
+   <pre>${sql.replace(/</g,"&lt;")}</pre>
+   <footer><span class="muted" style="font-size:12px">Statement as sent to the database (values replaced by placeholders)</span><span><button class="btn" id="cp">Copy</button> <button class="btn" id="cl">Close</button></span></footer></div>`;
+  document.body.appendChild(bg);const close=()=>bg.remove();
+  bg.onclick=e=>{if(e.target===bg)close()};bg.querySelector("#mx").onclick=bg.querySelector("#cl").onclick=close;
+  bg.querySelector("#cp").onclick=e=>{try{navigator.clipboard.writeText(sql)}catch(_){ }e.target.textContent="Copied"};}
+
+function detail(d){
+  const steps=flat(d.tree);const tot=d.s;
+  let h=`<tr class="detail"><td colspan="9"><div class="panel">
+   <div class="facts"><div>Total<b>${d.s.toFixed(2)} s</b></div><div>Own queries<b>${d.sel} select · ${d.upd} update</b></div><div>Sub-flows called<b>${d.calls}</b></div><div>Heap at start → end<b>${d.memStart} → ${d.memEnd} MB <span class="muted" style="font-weight:400">of ${d.memMax}</span></b></div><div>Execution id<b class="mono">${d.exec}</b></div></div>
+   <div class="muted" style="font-size:12px;margin:-4px 0 10px">Heap is the whole server's memory, shared by every request and cleaned up at random moments – read it as a rough hint only.</div>
+   <div class="tabs"><a class="${S.tab==="flow"?"on":""}" data-t="flow">Call breakdown</a><a class="${S.tab==="sql"?"on":""}" data-t="sql">Queries</a></div>`;
+  if(S.tab==="flow"){
+    h+=`<div class="step head"><span>Microflow / activity</span><span class="num">Selects</span><span class="num">Updates</span><span class="num">Took (s)</span><span title="Where the step sits inside the whole run: starts at the left edge = start of the run, the bar length = how long it took">Timeline</span></div>
+    <div class="legend"><span><i class="lg" style="background:var(--brand-primary)"></i>Normal step</span><span><i class="lg" style="background:var(--brand-warning)"></i>Takes more than 30% of the whole run</span><span class="muted">Bar position = when it started · bar length = how long it took · full width = the whole run</span></div>`;
+    steps.forEach(x=>{const hot=x.s/tot>.3;
+      h+=`<div class="step ${x.kind==="mf"?"mf":""}"><span style="padding-left:${x.depth*18}px">${x.kind==="mf"?"▸ ":""}<span class="${x.kind==="mf"?"mono":""}">${x.name}</span></span><span class="num">${x.sel||"–"}</span><span class="num">${x.upd||"–"}</span><span class="num mono">${x.s.toFixed(2)}</span><span class="bar"><i class="${hot?"hot":""}" style="left:${x.off/tot*100}%;width:${Math.max(.8,x.s/tot*100)}%"></i></span></div>`;});
+  }else{
+    const q=Object.entries(d.tree.sqls).map(([s,n])=>({s,n,avg:sqlAvg(s)})).sort((a,b)=>b.n*b.avg-a.n*a.avg);
+    h+=`<div class="sqlrow head"><span class="num">Runs</span><span class="num">Avg (ms)</span><span class="num">Total (s)</span><span>Statement <span class="muted" style="font-weight:400">– click to open in full</span></span></div>`+
+    q.map(x=>`<div class="sqlrow click" data-sql="${encodeURIComponent(x.s)}" data-n="${x.n}" data-avg="${x.avg}"><span class="num"><span class="badge ${x.n>=20?"b-warning":"b-muted"}">${x.n}×</span></span><span class="num mono">${x.avg.toFixed(1)}</span><span class="num mono">${(x.n*x.avg/1000).toFixed(2)}</span><span class="mono ell">${x.s}${x.n>=20?` <span class="flag" title="Same statement repeated – possible N+1">⚠</span>`:""}</span></div>`).join("")||`<div class="muted" style="padding:10px">No query text captured.</div>`;
+  }
+  return h+`</div></td></tr>`;}
+
+function render(){
+  const q=$("#q").value.toLowerCase(),thr=CFG.thr/1000;
+  $("#cfgInfo").textContent=`Capturing flows slower than ${thr} s · keeping ${CFG.days} days`;
+  const f=data.filter(d=>d.name.toLowerCase().includes(q)&&d.s*1000>=thr*1000).sort((a,b)=>(a[S.sort]>b[S.sort]?1:-1)*S.dir);
+  const max=Math.ceil(f.length/S.size)||1;S.page=Math.min(S.page,max-1);
+  $("#rows").innerHTML=f.slice(S.page*S.size,(S.page+1)*S.size).map(d=>{const o=S.open===d.id;
+    return `<tr class="main ${o?"open":""}" data-id="${d.id}"><td><span class="caret">▶</span></td><td>${fmt(d.t)}</td><td class="mono">${d.name}${d.n1?'<span class="flag" title="Repeated identical query – possible N+1">⚠</span>':""}</td><td class="num"><span class="badge ${sc(d.s)}">${d.s.toFixed(2)}</span></td><td class="num">${d.sel}</td><td class="num">${d.upd}</td><td class="num">${d.calls}</td><td class="num muted">${mem(d)}</td><td class="mono muted">${d.exec}</td></tr>`+(o?detail(d):"");}).join("")||`<tr><td colspan="9" class="muted" style="text-align:center;padding:30px">Nothing found</td></tr>`;
+  $("#count").textContent=`${f.length} executions · page ${S.page+1} of ${max}`;
+  document.querySelectorAll("tr.main").forEach(r=>r.onclick=()=>{S.open=S.open===+r.dataset.id?null:+r.dataset.id;S.tab="flow";render();});
+  document.querySelectorAll(".sqlrow.click").forEach(r=>r.onclick=e=>{e.stopPropagation();openSql(decodeURIComponent(r.dataset.sql),+r.dataset.n,+r.dataset.avg)});
+  document.querySelectorAll(".tabs a").forEach(a=>a.onclick=e=>{e.stopPropagation();S.tab=a.dataset.t;render();});
+}
+$("#q").oninput=()=>{S.page=0;render()};function openSettings(){const bg=document.createElement("div");bg.className="modal-bg";
+  bg.innerHTML=`<div class="modal" style="width:min(520px,92vw)"><header>Capture settings<span id="mx">×</span></header>
+   <div style="padding:18px;display:grid;gap:16px">
+    <div><label class="lbl">Only capture flows slower than (ms)</label><input id="thr" type="number" class="form-control" value="${CFG.thr}" step="100" min="0" style="width:160px">
+      <div class="muted" style="font-size:12px;margin-top:4px">Default 1000. Faster runs are timed in memory and thrown away – nothing is saved. Counts the entry-point microflow, so its sub-flows are kept with it.</div></div>
+    <div><label class="lbl">Keep data for (days)</label><input id="days" type="number" class="form-control" value="${CFG.days}" min="1" style="width:160px">
+      <div class="muted" style="font-size:12px;margin-top:4px">Older runs are deleted every night.</div></div>
+   </div>
+   <footer><span></span><span><button class="btn" id="cl">Cancel</button> <button class="btn btn-primary" id="sv">Save</button></span></footer></div>`;
+  document.body.appendChild(bg);const close=()=>bg.remove();
+  bg.onclick=e=>{if(e.target===bg)close()};bg.querySelector("#mx").onclick=bg.querySelector("#cl").onclick=close;
+  bg.querySelector("#sv").onclick=()=>{CFG.thr=+bg.querySelector("#thr").value||0;CFG.days=+bg.querySelector("#days").value||14;close();S.page=0;render();};}
+$("#cfgBtn").onclick=openSettings;$("#prev").onclick=()=>{S.page=Math.max(0,S.page-1);render()};$("#next").onclick=()=>{S.page++;render()};
+document.querySelectorAll("th[data-s]").forEach(th=>th.onclick=()=>{S.dir=S.sort===th.dataset.s?-S.dir:-1;S.sort=th.dataset.s;render()});
+render();
+</script>
+</body>
+</html>

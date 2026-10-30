@@ -1,0 +1,285 @@
+mdl 1;
+
+-- Page state: open or close a row. The change is never committed, so nothing is written to the database.
+CREATE OR MODIFY NANOFLOW FlowScope.NAN_ToggleExpanded ($Execution: FlowScope.Execution)
+BEGIN
+  CHANGE $Execution (IsExpanded = not($Execution/IsExpanded));
+END;
+
+/** Returns the single Settings object, creating it with its defaults the first time. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_GetSettings ()
+RETURNS FlowScope.Settings AS $Result
+BEGIN
+  RETRIEVE $Existing FROM FlowScope.Settings FIRST;
+  IF $Existing != empty THEN
+    RETURN $Existing;
+  END IF;
+  $Created = CREATE FlowScope.Settings (CaptureEnabled = false, ThresholdMs = 1000, RetentionDays = 14);
+  COMMIT $Created;
+  RETURN $Created;
+END;
+
+CREATE OR MODIFY MICROFLOW FlowScope.ACT_OpenSettings ()
+BEGIN
+  $Settings = CALL MICROFLOW FlowScope.SUB_GetSettings();
+  SHOW PAGE FlowScope.Settings_Popup (Settings = $Settings);
+END;
+
+CREATE OR MODIFY MICROFLOW FlowScope.ACT_DeleteAllExecutions ()
+BEGIN
+  RETRIEVE $All FROM FlowScope.Execution;
+  DELETE $All;
+END;
+
+/** Adds one made-up run with a small call tree and two statements, so the page can be tried before capture is on. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_AddDemoExecution (
+  $Name: String,
+  $Seconds: Decimal,
+  $Selects: Long,
+  $Updates: Long,
+  $HeapDelta: Long
+)
+BEGIN
+  $Run = CREATE FlowScope.Execution (
+    StartedAt = [%CurrentDateTime%],
+    MicroflowName = $Name,
+    DurationSeconds = $Seconds,
+    SelectCount = $Selects,
+    UpdateCount = $Updates,
+    SubflowCount = 1,
+    HeapStartMB = 900,
+    HeapEndMB = 900 + $HeapDelta,
+    HeapDeltaMB = $HeapDelta,
+    ExecutionId = 'demo',
+    NodeName = 'demo'
+  );
+  COMMIT $Run;
+  $S1 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 1, Depth = 0, Kind = FlowScope.StepKind.Microflow, Name = $Name, DurationSeconds = $Seconds, SelectCount = $Selects, UpdateCount = $Updates, SharePercent = 100);
+  $S2 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 2, Depth = 1, Kind = FlowScope.StepKind.Activity, Name = 'Retrieve list from database', DurationSeconds = $Seconds * 0.15, SelectCount = 1, UpdateCount = 0, SharePercent = 15);
+  $S3 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 3, Depth = 1, Kind = FlowScope.StepKind.Activity, Name = 'Loop: retrieve Product', DurationSeconds = $Seconds * 0.55, SelectCount = $Selects, UpdateCount = 0, SharePercent = 55);
+  $S4 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 4, Depth = 1, Kind = FlowScope.StepKind.Microflow, Name = 'Orders.SUB_Calculate', DurationSeconds = $Seconds * 0.2, SelectCount = 0, UpdateCount = $Updates, SharePercent = 20);
+  $S5 = CREATE FlowScope.ExecutionStep (ExecutionStep_Execution = $Run, Seq = 5, Depth = 2, Kind = FlowScope.StepKind.Activity, Name = 'Commit Order', DurationSeconds = $Seconds * 0.1, SelectCount = 0, UpdateCount = $Updates, SharePercent = 10);
+  $Q1 = CREATE FlowScope.ExecutionQuery (ExecutionQuery_Execution = $Run, Statement = 'SELECT x1.id, x1.name, x1.price FROM orders$product x1 WHERE x1.id = ?', RunCount = $Selects, AvgMs = 4.2, TotalSeconds = $Seconds * 0.5);
+  $Q2 = CREATE FlowScope.ExecutionQuery (ExecutionQuery_Execution = $Run, Statement = 'UPDATE orders$order SET total = ?, changeddate = ? WHERE id = ?', RunCount = $Updates, AvgMs = 2.1, TotalSeconds = $Seconds * 0.1);
+  COMMIT $S1;
+  COMMIT $S2;
+  COMMIT $S3;
+  COMMIT $S4;
+  COMMIT $S5;
+  COMMIT $Q1;
+  COMMIT $Q2;
+END;
+
+CREATE OR MODIFY MICROFLOW FlowScope.ACT_CreateDemoData ()
+BEGIN
+  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'Orders.ACT_Order_Submit', Seconds = 1.2, Selects = 4, Updates = 3, HeapDelta = 12);
+  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'Customers.ACT_Customer_Import', Seconds = 7.4, Selects = 120, Updates = 120, HeapDelta = -38);
+  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'Admin.ACT_Report_Generate', Seconds = 11.8, Selects = 6, Updates = 1, HeapDelta = 85);
+  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'Integration.REST_GetInvoices', Seconds = 3.4, Selects = 2, Updates = 0, HeapDelta = 4);
+  CALL MICROFLOW FlowScope.SUB_AddDemoExecution(Name = 'FolderCreator.ACT_CreateFolders', Seconds = 2.2, Selects = 1, Updates = 3, HeapDelta = -2);
+END;
+
+/** The full statement, as a read-only text. */
+CREATE OR MODIFY PAGE FlowScope.Query_Popup (
+  Params: ($Query: FlowScope.ExecutionQuery),
+  Title: 'Query',
+  Layout: Atlas_Core.PopupLayout,
+  PopupWidth: 760,
+  PopupHeight: 520
+) {
+  layoutgrid lgQ { row { column (DesktopWidth: 12) {
+  dataview dvQuery (DataSource: $Query) {
+    container ctnStats (Class: 'fs-facts') {
+      container ctnRuns (Class: 'fs-fact') {
+        dynamictext lblRuns (Content: 'Times run', Class: 'fs-label')
+        dynamictext valRuns (Content: '{1}', ContentParams: ({1} = RunCount), Class: 'fs-value')
+      }
+      container ctnAvg (Class: 'fs-fact') {
+        dynamictext lblAvg (Content: 'Average per run', Class: 'fs-label')
+        dynamictext valAvg (Content: '{1} ms', ContentParams: ({1} = AvgMs format (decimalPrecision: 1)), Class: 'fs-value')
+      }
+      container ctnTotal (Class: 'fs-fact') {
+        dynamictext lblTotal (Content: 'Total', Class: 'fs-label')
+        dynamictext valTotal (Content: '{1} s', ContentParams: ({1} = TotalSeconds format (decimalPrecision: 2)), Class: 'fs-value')
+      }
+    }
+    container ctnSql (Class: 'fs-sql') {
+      textarea txtStatement (Label: 'Statement', Attribute: Statement, Editable: Never)
+    }
+    dynamictext txtNote (Content: 'Values are replaced by ? before saving, so no data is stored.', Class: 'fs-hint')
+    container ctnFoot {
+      actionbutton btnClose (Caption: 'Close', Action: close page, ButtonStyle: primary)
+    }
+  }
+  } } }
+};
+
+CREATE OR MODIFY PAGE FlowScope.Settings_Popup (
+  Params: ($Settings: FlowScope.Settings),
+  Title: 'Capture settings',
+  Layout: Atlas_Core.PopupLayout,
+  PopupWidth: 560,
+  PopupHeight: 560
+) {
+  layoutgrid lgS { row { column (DesktopWidth: 12) {
+  dataview dvSettings (DataSource: $Settings) {
+    checkbox cbCapture (Label: 'Capture enabled', Attribute: CaptureEnabled)
+    textbox txtThreshold (Label: 'Only capture flows slower than (ms)', Attribute: ThresholdMs)
+    dynamictext hintThreshold (Content: 'Faster runs are timed in memory and thrown away. Nothing is saved for them.', Class: 'fs-hint')
+    textbox txtRetention (Label: 'Keep data for (days)', Attribute: RetentionDays)
+    dynamictext hintRetention (Content: 'Older runs are deleted every night.', Class: 'fs-hint')
+    textbox txtInclude (Label: 'Only profile microflows matching (regular expression)', Attribute: IncludeRegexp)
+    textbox txtExclude (Label: 'Never profile microflows matching (regular expression)', Attribute: ExcludeRegexp)
+    container ctnFoot {
+      actionbutton btnDemo (Caption: 'Add demo data', Action: call microflow FlowScope.ACT_CreateDemoData)
+      actionbutton btnDeleteAll (Caption: 'Delete all captured runs', Action: call microflow FlowScope.ACT_DeleteAllExecutions, ButtonStyle: danger)
+      actionbutton btnCancel (Caption: 'Cancel', Action: cancel changes)
+      actionbutton btnSave (Caption: 'Save', Action: save changes, ButtonStyle: primary)
+    }
+  }
+  } } }
+};
+
+CREATE OR MODIFY PAGE FlowScope.Executions (
+  Title: 'Microflow executions',
+  Layout: Atlas_Core.Atlas_Default,
+  Url: 'flowscope'
+) {
+  layoutgrid lgMain {
+    row {
+      column (DesktopWidth: 12) {
+        dynamictext txtTitle (Content: 'Microflow executions', RenderMode: H2)
+        dynamictext txtSub (Content: 'Slow microflow runs, captured automatically. Click a run to see where the time went.', Class: 'fs-sub')
+        container ctnCard (Class: 'fs-card') {
+          container ctnBar (Class: 'fs-toolbar') {
+            actionbutton btnSettings (Caption: 'Settings', Action: call microflow FlowScope.ACT_OpenSettings)
+          }
+          container ctnColHead (Class: 'fs-cols fs-colhead') {
+            dynamictext hCaret (Content: ' ')
+            dynamictext hStarted (Content: 'Started')
+            dynamictext hName (Content: 'Microflow')
+            dynamictext hDur (Content: 'Duration (s)', Class: 'fs-num')
+            dynamictext hSel (Content: 'Selects', Class: 'fs-num')
+            dynamictext hUpd (Content: 'Updates', Class: 'fs-num')
+            dynamictext hSub (Content: 'Sub-flows', Class: 'fs-num')
+            dynamictext hHeap (Content: 'Heap Δ (MB)', Class: 'fs-num')
+          }
+          listview galExec (
+            DataSource: DATABASE FlowScope.Execution SORT BY DurationSeconds DESC SEARCH BY MicroflowName,
+            Class: 'fs-gallery'
+          ) {
+              container ctnItem (
+                Class: 'fs-item',
+                DynamicClasses: if $currentObject/IsExpanded then 'fs-open' else ''
+              ) {
+                container ctnHead (
+                  Class: 'fs-cols fs-head',
+                  OnClick: call nanoflow FlowScope.NAN_ToggleExpanded(Execution = $currentObject)
+                ) {
+                  dynamictext txtCaret (Content: '▶', Class: 'fs-caret')
+                  dynamictext txtStarted (Content: '{1}', ContentParams: ({1} = StartedAt format (dateFormat: DateTime)))
+                  dynamictext txtName (Content: '{1}', ContentParams: ({1} = MicroflowName), Class: 'fs-mono')
+                  container ctnDur (Class: 'fs-num') {
+                    dynamictext txtDur (
+                      Content: '{1}',
+                      ContentParams: ({1} = DurationSeconds format (decimalPrecision: 2)),
+                      Class: 'fs-badge',
+                      DynamicClasses: if $currentObject/DurationSeconds > 5 then 'fs-badge--slow' else if $currentObject/DurationSeconds > 1 then 'fs-badge--warn' else ''
+                    )
+                  }
+                  dynamictext txtSel (Content: '{1}', ContentParams: ({1} = SelectCount), Class: 'fs-num')
+                  dynamictext txtUpd (Content: '{1}', ContentParams: ({1} = UpdateCount), Class: 'fs-num')
+                  dynamictext txtSub2 (Content: '{1}', ContentParams: ({1} = SubflowCount), Class: 'fs-num')
+                  dynamictext txtHeap (Content: '{1}', ContentParams: ({1} = HeapDeltaMB), Class: 'fs-num fs-muted')
+                }
+                container ctnBody (Class: 'fs-body', Visible: $currentObject/IsExpanded) {
+                  container ctnFacts (Class: 'fs-facts') {
+                    container ctnF1 (Class: 'fs-fact') {
+                      dynamictext lF1 (Content: 'Heap start to end', Class: 'fs-label')
+                      dynamictext vF1 (Content: '{1} to {2} MB', ContentParams: ({1} = HeapStartMB, {2} = HeapEndMB), Class: 'fs-value')
+                    }
+                    container ctnF2 (Class: 'fs-fact') {
+                      dynamictext lF2 (Content: 'Execution id', Class: 'fs-label')
+                      dynamictext vF2 (Content: '{1}', ContentParams: ({1} = ExecutionId), Class: 'fs-value fs-mono')
+                    }
+                    container ctnF3 (Class: 'fs-fact') {
+                      dynamictext lF3 (Content: 'Server node', Class: 'fs-label')
+                      dynamictext vF3 (Content: '{1}', ContentParams: ({1} = NodeName), Class: 'fs-value')
+                    }
+                  }
+                  tabcontainer tabsDetail {
+                    tabpage tpSteps (Caption: 'Breakdown') {
+                      container ctnSteps (Class: 'fs-steps') {
+                        container ctnStepHead (Class: 'fs-step fs-step--head') {
+                          dynamictext shName (Content: 'Step')
+                          dynamictext shSel (Content: 'Selects', Class: 'fs-num')
+                          dynamictext shUpd (Content: 'Updates', Class: 'fs-num')
+                          dynamictext shTook (Content: 'Took (s)', Class: 'fs-num')
+                          dynamictext shShare (Content: 'Share of run')
+                        }
+                        listview lvSteps (DataSource: DATABASE FROM $currentObject/FlowScope.ExecutionStep_Execution/FlowScope.ExecutionStep SORT BY Seq ASC) {
+                          container ctnStep (
+                            Class: 'fs-step',
+                            DynamicClasses: if $currentObject/Kind = FlowScope.StepKind.Microflow then 'fs-step--mf' else ''
+                          ) {
+                            dynamictext txtStepName (
+                              Content: '{1}',
+                              ContentParams: ({1} = Name),
+                              DynamicClasses: 'fs-depth-' + toString($currentObject/Depth)
+                            )
+                            dynamictext txtStepSel (Content: '{1}', ContentParams: ({1} = SelectCount), Class: 'fs-num')
+                            dynamictext txtStepUpd (Content: '{1}', ContentParams: ({1} = UpdateCount), Class: 'fs-num')
+                            dynamictext txtStepTook (Content: '{1}', ContentParams: ({1} = DurationSeconds format (decimalPrecision: 2)), Class: 'fs-num')
+                            container ctnShare (DynamicClasses: if $currentObject/SharePercent > 30 and $currentObject/Depth > 0 then 'fs-hot' else '') {
+                              pluggablewidget 'com.mendix.widget.custom.progressbar.ProgressBar' pbShare (
+                                type: expression,
+                                expressionCurrentValue: $currentObject/SharePercent,
+                                expressionMinValue: 0,
+                                expressionMaxValue: 100
+                              )
+                            }
+                          }
+                        }
+                      }
+                    }
+                    tabpage tpQueries (Caption: 'Queries') {
+                      container ctnQueries (Class: 'fs-steps') {
+                        container ctnQueryHead (Class: 'fs-query fs-query--head') {
+                          dynamictext qhRuns (Content: 'Runs', Class: 'fs-num')
+                          dynamictext qhAvg (Content: 'Avg (ms)', Class: 'fs-num')
+                          dynamictext qhTotal (Content: 'Total (s)', Class: 'fs-num')
+                          dynamictext qhSql (Content: 'Statement - click to open in full')
+                        }
+                        listview lvQueries (DataSource: DATABASE FROM $currentObject/FlowScope.ExecutionQuery_Execution/FlowScope.ExecutionQuery SORT BY TotalSeconds DESC) {
+                          container ctnQuery (
+                            Class: 'fs-query',
+                            OnClick: show page FlowScope.Query_Popup(Query = $currentObject)
+                          ) {
+                            dynamictext txtQRuns (Content: '{1}×', ContentParams: ({1} = RunCount), Class: 'fs-num')
+                            dynamictext txtQAvg (Content: '{1}', ContentParams: ({1} = AvgMs format (decimalPrecision: 1)), Class: 'fs-num')
+                            dynamictext txtQTotal (Content: '{1}', ContentParams: ({1} = TotalSeconds format (decimalPrecision: 2)), Class: 'fs-num')
+                            dynamictext txtQSql (Content: '{1}', ContentParams: ({1} = Statement), Class: 'fs-mono')
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+          }
+        }
+      }
+    }
+  }
+};
+
+GRANT VIEW ON PAGE FlowScope.Executions TO FlowScope.Developer;
+GRANT VIEW ON PAGE FlowScope.Settings_Popup TO FlowScope.Developer;
+GRANT VIEW ON PAGE FlowScope.Query_Popup TO FlowScope.Developer;
+GRANT EXECUTE ON MICROFLOW FlowScope.SUB_GetSettings TO FlowScope.Developer;
+GRANT EXECUTE ON MICROFLOW FlowScope.ACT_OpenSettings TO FlowScope.Developer;
+GRANT EXECUTE ON MICROFLOW FlowScope.ACT_DeleteAllExecutions TO FlowScope.Developer;
+GRANT EXECUTE ON MICROFLOW FlowScope.SUB_AddDemoExecution TO FlowScope.Developer;
+GRANT EXECUTE ON MICROFLOW FlowScope.ACT_CreateDemoData TO FlowScope.Developer;
+GRANT EXECUTE ON NANOFLOW FlowScope.NAN_ToggleExpanded TO FlowScope.Developer;
+

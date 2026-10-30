@@ -1,0 +1,62 @@
+@import '../../../theme/web/custom-variables';
+
+$fs-brand: #264AE5;
+$fs-text2: #6C7180;
+$fs-line: #E7E8EA;
+$fs-bg: #F5F6F6;
+$fs-warn: #F99B1D;
+
+.fs-card { background: #fff; border: 1px solid $fs-line; border-radius: 4px; padding: 16px; }
+.fs-sub { color: $fs-text2; margin-bottom: 16px; }
+.fs-toolbar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.fs-toolbar .form-group { margin: 0; }
+.fs-spacer { flex: 1; }
+
+/* one grid definition for the header labels, each row and the step lines */
+.fs-cols { display: grid; grid-template-columns: 22px 150px minmax(200px, 1fr) 100px 80px 80px 80px 90px; gap: 10px; align-items: center; }
+.fs-colhead { padding: 8px 12px; background: $fs-bg; border-bottom: 2px solid $fs-line; font-size: 12px; font-weight: 600; color: #3B4252; }
+.fs-num { text-align: right; font-variant-numeric: tabular-nums; }
+.fs-mono { font-family: Consolas, monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-muted { color: $fs-text2; }
+
+.fs-item { border-bottom: 1px solid $fs-line; }
+.fs-head { padding: 10px 12px; cursor: pointer; }
+.fs-head:hover, .fs-open > .fs-head { background: #EEF1FD; }
+.fs-caret { color: $fs-text2; display: inline-block; transition: transform .15s; }
+.fs-open > .fs-head .fs-caret { transform: rotate(90deg); }
+.fs-body { background: $fs-bg; padding: 12px 16px 16px 48px; border-top: 1px solid $fs-line; }
+.fs-facts { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 12px; }
+.fs-fact .fs-label { font-size: 12px; color: $fs-text2; display: block; }
+.fs-fact .fs-value { font-size: 15px; font-weight: 600; }
+
+.fs-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; color: #fff; background: #3CB33D; }
+.fs-badge--warn { background: #F99B1D; }
+.fs-badge--slow { background: #E33F4E; }
+
+.fs-steps { background: #fff; border: 1px solid $fs-line; border-radius: 4px; }
+.fs-step { display: grid; grid-template-columns: minmax(220px, 1fr) 80px 80px 90px 150px; gap: 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid $fs-line; font-size: 13px; }
+.fs-step--head { background: $fs-bg; font-size: 12px; font-weight: 600; color: #3B4252; }
+.fs-step--mf { font-weight: 600; }
+.fs-depth-1 { padding-left: 30px; }
+.fs-depth-2 { padding-left: 48px; }
+.fs-depth-3 { padding-left: 66px; }
+.fs-depth-4 { padding-left: 84px; }
+.fs-hot .progress-bar { background: $fs-warn; }
+.fs-step .progress { margin: 0; height: 10px; }
+
+.fs-query { display: grid; grid-template-columns: 70px 90px 90px 1fr; gap: 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid $fs-line; font-size: 13px; cursor: pointer; }
+.fs-query:hover { background: #EEF1FD; }
+.fs-query--head { background: $fs-bg; font-size: 12px; font-weight: 600; color: #3B4252; cursor: default; }
+.fs-query--head:hover { background: $fs-bg; }
+
+.fs-sql textarea { font-family: Consolas, monospace; font-size: 13px; min-height: 260px; background: $fs-bg; }
+.fs-hint { font-size: 12px; color: $fs-text2; }
+
+.mx-listview.fs-gallery > ul { margin: 0; padding: 0; }
+.mx-listview.fs-gallery > ul > li { padding: 0; margin: 0; border: 0; list-style: none; background: none; }
+
+@media (max-width: 900px) {
+  .fs-cols { grid-template-columns: 22px 1fr 90px; }
+  .fs-cols > *:nth-child(2), .fs-cols > *:nth-child(n+5) { display: none; }
+  .fs-body { padding-left: 16px; }
+}

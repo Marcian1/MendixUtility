@@ -1,0 +1,78 @@
+mdl 1;
+
+-- Capture is done in Java (javasource/flowscope/implementation). These are the hooks that switch it on and
+-- off from the Settings object, and the nightly cleanup.
+
+/** Applies the capture settings. The engine reads the runtime's microflow log and database calls. */
+CREATE OR MODIFY JAVA ACTION FlowScope.ConfigureCapture(
+  /** Capture on or off. */
+  Enabled: Boolean NOT NULL,
+  /** Runs faster than this many milliseconds are discarded. */
+  ThresholdMs: Long NOT NULL,
+  /** Only microflows matching this regular expression are profiled. Empty means all. */
+  IncludeRegexp: String,
+  /** Microflows matching this regular expression are never profiled. */
+  ExcludeRegexp: String
+) RETURNS Boolean
+AS $$
+flowscope.implementation.CaptureEngine.get().configure(Enabled, ThresholdMs, IncludeRegexp, ExcludeRegexp);
+return true;
+$$;
+
+/** Runs after the Settings object is committed, so a saved change takes effect at once. */
+CREATE OR MODIFY MICROFLOW FlowScope.ACT_ApplySettings ($Settings: FlowScope.Settings)
+BEGIN
+  $Applied = CALL JAVA ACTION FlowScope.ConfigureCapture(
+    Enabled = $Settings/CaptureEnabled,
+    ThresholdMs = $Settings/ThresholdMs,
+    IncludeRegexp = $Settings/IncludeRegexp,
+    ExcludeRegexp = $Settings/ExcludeRegexp
+  ) ON ERROR BEGIN
+    LOG ERROR NODE 'FlowScope' 'The capture settings could not be applied.';
+    RETURN;
+  END ERROR;
+END;
+
+/** After startup: read the saved settings and switch capture on if it was left on. */
+CREATE OR MODIFY MICROFLOW FlowScope.ASU_FlowScope ()
+RETURNS Boolean AS $Ok
+BEGIN
+  $Settings = CALL MICROFLOW FlowScope.SUB_GetSettings();
+  CALL MICROFLOW FlowScope.ACT_ApplySettings(Settings = $Settings);
+  RETURN true;
+END;
+
+/** Deletes runs older than the retention setting, 500 at a time so no single transaction gets large. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_DeleteOldExecutions ()
+BEGIN
+  $Settings = CALL MICROFLOW FlowScope.SUB_GetSettings();
+  DECLARE $Cutoff DateTime = addDays([%CurrentDateTime%], -1 * $Settings/RetentionDays);
+  DECLARE $More Boolean = true;
+  WHILE $More
+  BEGIN
+    RETRIEVE $Old FROM FlowScope.Execution WHERE StartedAt < $Cutoff LIMIT 500;
+    $Count = count $Old;
+    DELETE $Old;
+    SET $More = $Count = 500;
+  END WHILE;
+END;
+
+CREATE OR MODIFY MICROFLOW FlowScope.SE_DeleteOldExecutions ()
+BEGIN
+  CALL MICROFLOW FlowScope.SUB_DeleteOldExecutions();
+END;
+
+CREATE OR MODIFY SCHEDULED EVENT FlowScope.SE_NightlyCleanup (
+  Microflow: FlowScope.SE_DeleteOldExecutions,
+  Repeat: Daily,
+  HourOfDay: 3,
+  MinuteOfHour: 15,
+  TimeZone: Server,
+  Enabled: true
+);
+
+ALTER ENTITY FlowScope.Settings ADD EVENT HANDLER IF NOT EXISTS ON AFTER COMMIT CALL FlowScope.ACT_ApplySettings($currentObject);
+
+ALTER SETTINGS RUNTIME (AfterStartupMicroflow: 'FlowScope.ASU_FlowScope');
+
+GRANT EXECUTE ON MICROFLOW FlowScope.ACT_ApplySettings TO FlowScope.Developer;

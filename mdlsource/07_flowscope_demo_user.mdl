@@ -1,0 +1,4 @@
+mdl 1;
+
+/** Local test login with the Administrator role, which holds FlowScope.Developer. Local machine only. */
+CREATE OR MODIFY DEMO USER 'flowscope_dev' ( Password: 'Flow-Scope-Local-2026', UserRoles: (Administrator) );

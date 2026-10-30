@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlowScope – Mendix-ready draft</title>
+<!--
+  MENDIX MAPPING (standard widgets only, no custom code on the page)
+  #list        = Gallery (or List view) on FlowScope.Execution. Text filter + Dropdown sort widgets sit above it. Paging: 10 per page.
+  .lrow header = a clickable Container. On click: nanoflow "Toggle expanded" = change $Execution/IsExpanded (NO commit)
+  .lbody       = Container, visible when [IsExpanded]. Not rendered while collapsed, so its data is not fetched.
+  .tabs        = Tab container (Breakdown / Queries)
+  step list    = List view on FlowScope.ExecutionStep via association, sorted by Seq. Indent = padding-left from Depth (expression).
+  .pb bar      = Progress bar widget (value = SharePercent, style by expression: warning when > 30)
+  query list   = List view on FlowScope.ExecutionQuery; click -> pop-up page "Query_View" (text area, read-only)
+  settings     = pop-up page bound to FlowScope.Settings (one object)
+-->
+<style>
+:root{
+  --brand-primary:#264AE5; --brand-success:#3CB33D; --brand-warning:#F99B1D; --brand-danger:#E33F4E;
+  --gray-darker:#0A1325; --gray-dark:#3B4252; --gray:#6C7180; --gray-light:#CED0D3; --gray-lighter:#E7E8EA; --gray-lightest:#F5F6F6; --bg:#F8F8F8;
+  --radius:4px; --font:"Open Sans","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 var(--font);color:var(--gray-darker);background:var(--bg)}
+.topbar{background:var(--gray-darker);color:#fff;height:56px;display:flex;align-items:center;padding:0 20px;gap:12px}
+.content{padding:24px;max-width:1280px;margin:0 auto}
+h2{margin:0 0 4px;font-size:22px}.sub{color:var(--gray);margin:0 0 16px}
+.card{background:#fff;border:1px solid var(--gray-lighter);border-radius:var(--radius);padding:16px}
+.form-control{height:34px;padding:0 10px;border:1px solid var(--gray-light);border-radius:var(--radius);font:inherit;background:#fff}
+.form-control:focus{outline:2px solid var(--brand-primary);outline-offset:-1px;border-color:var(--brand-primary)}
+.btn{height:34px;padding:0 14px;border-radius:var(--radius);border:1px solid var(--gray-light);background:#fff;font:inherit;cursor:pointer}.btn:hover{background:var(--gray-lightest)}
+.btn-primary{background:var(--brand-primary);border-color:var(--brand-primary);color:#fff}.btn-primary:hover{background:#1D39B8}
+.toolbar{display:flex;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap}.toolbar input{flex:1;min-width:220px}.muted{color:var(--gray)}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+.b-success{background:var(--brand-success)}.b-warning{background:var(--brand-warning)}.b-danger{background:var(--brand-danger)}.b-muted{background:var(--gray-lighter);color:var(--gray-dark)}
+.mono{font-family:Consolas,monospace;font-size:13px}.num{text-align:right;font-variant-numeric:tabular-nums}
+/* expandable list rows */
+.cols{display:grid;grid-template-columns:26px 150px minmax(200px,1fr) 100px 80px 80px 80px 90px;gap:10px;align-items:center}
+.lhead{padding:8px 12px;background:var(--gray-lightest);border-bottom:2px solid var(--gray-lighter);font-size:12px;font-weight:600;color:var(--gray-dark)}
+.item{border-bottom:1px solid var(--gray-lighter)}
+.lrow{padding:10px 12px;cursor:pointer}.lrow:hover{background:#EEF1FD}.item.open>.lrow{background:#EEF1FD}
+.caret{color:var(--gray);display:inline-block;transition:transform .15s}.open>.lrow .caret{transform:rotate(90deg)}
+.lbody{background:var(--gray-lightest);padding:12px 16px 16px 48px;border-top:1px solid var(--gray-lighter)}
+.facts{display:flex;gap:28px;flex-wrap:wrap;margin-bottom:12px}.facts div{font-size:12px;color:var(--gray)}.facts b{display:block;font-size:15px;color:var(--gray-darker)}
+.tabs{display:flex;border-bottom:1px solid var(--gray-lighter);margin-bottom:10px}
+.tabs a{padding:7px 16px;cursor:pointer;color:var(--gray)}.tabs a.on{color:var(--brand-primary);border-bottom:2px solid var(--brand-primary);font-weight:600}
+.inner{background:#fff;border:1px solid var(--gray-lighter);border-radius:var(--radius)}
+.steps{display:grid;grid-template-columns:minmax(220px,1fr) 80px 80px 90px 150px;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--gray-lighter);font-size:13px}
+.steps.h{background:var(--gray-lightest);font-size:12px;font-weight:600;color:var(--gray-dark)}.steps:last-child{border:0}.steps.mf{font-weight:600;background:#FAFBFC}
+.qrow{display:grid;grid-template-columns:70px 90px 90px 1fr;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--gray-lighter);font-size:13px}
+.qrow.h{background:var(--gray-lightest);font-size:12px;font-weight:600;color:var(--gray-dark)}.qrow:last-child{border:0}.qrow.click{cursor:pointer}.qrow.click:hover{background:#EEF1FD}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pb{height:10px;background:var(--gray-lighter);border-radius:5px;overflow:hidden}.pb i{display:block;height:100%;background:var(--brand-primary)}.pb i.warn{background:var(--brand-warning)}
+.pager{display:flex;justify-content:space-between;align-items:center;padding-top:12px;color:var(--gray)}
+.empty{padding:30px;text-align:center;color:var(--gray)}.hint{font-size:12px;color:var(--gray)}
+.modal-bg{position:fixed;inset:0;background:rgba(10,19,37,.5);display:flex;align-items:center;justify-content:center;z-index:10}
+.modal{background:#fff;border-radius:6px;width:min(720px,92vw);max-height:86vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--gray-lighter);font-weight:600}.modal header span{cursor:pointer;font-size:20px;color:var(--gray)}
+.modal footer{padding:12px 18px;border-top:1px solid var(--gray-lighter);display:flex;justify-content:flex-end;gap:8px}
+.modal pre{margin:0;padding:16px 18px;overflow:auto;background:var(--gray-lightest);font:13px/1.5 Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+.lbl{display:block;font-size:12px;font-weight:600;color:var(--gray);margin-bottom:2px}
+@media(max-width:900px){.cols{grid-template-columns:26px 1fr 90px}.cols>*:nth-child(2),.cols>*:nth-child(n+5){display:none}.lbody{padding-left:16px}}
+</style>
+</head>
+<body>
+<div class="topbar"><b>⏱ FlowScope</b><span style="color:var(--gray-light)">MendixUtility</span></div>
+<main class="content">
+  <h2>Microflow executions</h2>
+  <p class="sub">Slow microflow runs, captured automatically. Click a run to see where the time went.</p>
+  <div class="card">
+    <div class="toolbar">
+      <input id="q" class="form-control" placeholder="Search microflow name…">
+      <select id="sort" class="form-control">
+        <option value="s:-1">Sort: Slowest first</option><option value="t:-1">Sort: Newest first</option><option value="name:1">Sort: Name A–Z</option>
+        <option value="sel:-1">Sort: Most selects</option><option value="upd:-1">Sort: Most updates</option></select>
+      <span class="muted" id="cfgInfo"></span>
+      <button class="btn" id="cfgBtn">⚙ Settings</button>
+    </div>
+    <div class="cols lhead"><span></span><span>Started</span><span>Microflow</span><span class="num">Duration (s)</span><span class="num">Selects</span><span class="num">Updates</span><span class="num">Sub-flows</span><span class="num" title="Server memory at end minus at start (MB). Minus = memory was freed meanwhile. Rough hint only.">Heap Δ (MB)</span></div>
+    <div id="list"></div>
+    <div class="pager"><span id="count"></span><span><button class="btn" id="prev">‹ Previous</button> <button class="btn" id="next">Next ›</button></span></div>
+  </div>
+</main>
+
+<script>
+let seed=5;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const $=s=>document.querySelector(s);const now=Date.now();
+const T={
+ "Orders.ACT_Order_Submit":{s:1.2,kids:["Orders.SUB_Order_Calculate","Orders.SUB_Order_Validate"],acts:[["Retrieve Order",.1,1,0],["Change Order",.02,0,0],["Commit Order",.15,0,2]]},
+ "Orders.SUB_Order_Calculate":{s:.6,kids:[],acts:[["Retrieve OrderLines",.2,1,0],["Loop OrderLines → Retrieve Product",.6,40,0,"SELECT … FROM orders$product WHERE id = ?"],["Commit OrderLines",.2,0,1]]},
+ "Orders.SUB_Order_Validate":{s:.12,kids:[],acts:[["Retrieve Customer",.7,1,0],["Validation feedback",.3,0,0]]},
+ "Orders.DS_Order_Overview":{s:.25,kids:[],acts:[["Retrieve Orders",.9,2,0],["Create list",.1,0,0]]},
+ "Customers.ACT_Customer_Import":{s:7,kids:["Customers.SUB_Customer_Upsert"],acts:[["Import mapping",.3,0,0],["Loop Customers",.1,0,0],["Commit list",.4,0,1]]},
+ "Customers.SUB_Customer_Upsert":{s:2.4,kids:[],acts:[["Retrieve existing",.4,120,0,"SELECT … FROM customers$customer WHERE externalid = ?"],["Change Customer",.1,0,0],["Commit Customer",.5,0,120]]},
+ "FolderCreator.ACT_CreateFolders":{s:2.2,kids:[],acts:[["Call REST create folder",.8,0,0],["Commit Folder",.2,0,3]]},
+ "Admin.SE_Cleanup_OldData":{s:22,kids:[],acts:[["Retrieve old rows",.3,3,0],["Delete list",.7,0,5000]]},
+ "Admin.ACT_Report_Generate":{s:11,kids:[],acts:[["Retrieve all Orders",.6,4,0],["Aggregate list",.3,0,0],["Commit Report",.1,0,1]]},
+ "Integration.REST_GetInvoices":{s:3.4,kids:[],acts:[["Retrieve Invoices",.5,2,0],["Export mapping",.5,0,0]]}
+};
+const roots=["Orders.ACT_Order_Submit","Orders.DS_Order_Overview","Customers.ACT_Customer_Import","FolderCreator.ACT_CreateFolders","Admin.SE_Cleanup_OldData","Admin.ACT_Report_Generate","Integration.REST_GetInvoices"];
+const sqlAvg=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%997;return 1.5+(h%90)/6;};
+function build(name,total,depth,out,sqls,acc){ // flat ExecutionStep rows, as the Java side would store them
+  const t=T[name];const kidShare=t.kids.length?.55:0,own=total*(1-kidShare);
+  const row={kind:"Microflow",name,depth,s:total,sel:0,upd:0};out.push(row);
+  t.acts.forEach(([cap,w,sel,upd,rep])=>{const d=+(own*w).toFixed(3),k=1+rnd()*.3,sl=Math.round(sel*k),up=Math.round(upd*k);
+    out.push({kind:"Activity",name:cap,depth:depth+1,s:d,sel:sl,upd:up});row.sel+=sl;row.upd+=up;
+    const key=rep||(sl?"SELECT … FROM "+cap.replace(/Retrieve /,"").toLowerCase():null);if(key)sqls[key]=(sqls[key]||0)+sl;});
+  t.kids.forEach(k=>{const c=build(k,+(total*kidShare/t.kids.length).toFixed(3),depth+1,out,sqls,acc);row.sel+=c.sel;row.upd+=c.upd;acc.calls+=1+c.calls;});
+  return {sel:row.sel,upd:row.upd,calls:0};}
+const data=[];
+for(let i=0;i<90;i++){const r=roots[Math.floor(rnd()*roots.length)];
+  const s=+(T[r].s*(.4+rnd()*1.5)*(rnd()>.92?3:1)).toFixed(2);
+  const steps=[],sqls={},acc={calls:0};build(r,s,0,steps,sqls,acc);steps.forEach(x=>x.share=Math.round(x.s/s*100));
+  const memStart=Math.round(600+rnd()*500),memD=Math.round((rnd()-.35)*60*Math.min(s,6));
+  data.push({id:i,t:now-rnd()*86400000*3,name:r,s,sel:steps[0].sel,upd:steps[0].upd,calls:acc.calls,memStart,memEnd:memStart+memD,memD,
+    exec:"1730"+(Math.floor(rnd()*9e8)+1e8)+"-"+(Math.floor(rnd()*30)+1),steps,
+    queries:Object.entries(sqls).map(([q,n])=>({q,n,avg:sqlAvg(q)})).sort((a,b)=>b.n*b.avg-a.n*a.avg)});}
+
+const CFG={thr:1000,days:14};
+const S={page:0,size:10,open:new Set(),tab:{}};
+const fmt=t=>new Date(t).toLocaleString([], {month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+const sc=s=>s>5?"b-danger":s>1?"b-warning":"b-success";
+const mem=d=>`${d.memD>0?"+":""}${d.memD}`;
+
+function fullSql(s){const t=(s.match(/FROM\s+(\S+)/)||[,"orders$order"])[1];
+  return `SELECT x1.id,\n       x1.createddate,\n       x1.changeddate,\n       x1.name,\n       x1.status,\n       x1.amount\nFROM ${t} x1\n${/WHERE/.test(s)?"WHERE x1.id = $1":"WHERE x1.status <> $1"}\nORDER BY x1.createddate DESC\nLIMIT 1000;`;}
+function modal(title,body,foot){const bg=document.createElement("div");bg.className="modal-bg";
+  bg.innerHTML=`<div class="modal"><header>${title}<span id="mx">×</span></header>${body}<footer>${foot}</footer></div>`;document.body.appendChild(bg);
+  const close=()=>bg.remove();bg.onclick=e=>{if(e.target===bg)close()};bg.querySelector("#mx").onclick=close;return {bg,close};}
+function openSql(x){const sql=fullSql(x.q);const m=modal("Query",`<div style="padding:12px 18px" class="hint">Run ${x.n}× · avg ${x.avg.toFixed(1)} ms · total ${(x.n*x.avg/1000).toFixed(2)} s</div><pre>${sql}</pre>`,`<button class="btn" id="cp">Copy</button><button class="btn btn-primary" id="cl">Close</button>`);
+  m.bg.querySelector("#cl").onclick=m.close;m.bg.querySelector("#cp").onclick=e=>{try{navigator.clipboard.writeText(sql)}catch(_){ }e.target.textContent="Copied"};}
+function openSettings(){const m=modal("Capture settings",`<div style="padding:18px;display:grid;gap:16px">
+  <div><label class="lbl">Only capture flows slower than (ms)</label><input id="thr" type="number" class="form-control" value="${CFG.thr}" step="100" min="0" style="width:160px"><div class="hint">Default 1000. Faster runs are discarded and never saved.</div></div>
+  <div><label class="lbl">Keep data for (days)</label><input id="days" type="number" class="form-control" value="${CFG.days}" min="1" style="width:160px"><div class="hint">Older runs are deleted every night.</div></div></div>`,
+  `<button class="btn" id="cl">Cancel</button><button class="btn btn-primary" id="sv">Save</button>`);
+  m.bg.querySelector("#cl").onclick=m.close;
+  m.bg.querySelector("#sv").onclick=()=>{CFG.thr=+m.bg.querySelector("#thr").value||0;CFG.days=+m.bg.querySelector("#days").value||14;m.close();S.page=0;render();};}
+
+function body(d){const tab=S.tab[d.id]||"flow";
+  let h=`<div class="facts"><div>Duration<b>${d.s.toFixed(2)} s</b></div><div>Queries<b>${d.sel} select · ${d.upd} update</b></div><div>Heap start → end<b>${d.memStart} → ${d.memEnd} MB</b></div><div>Execution id<b class="mono">${d.exec}</b></div></div>
+  <div class="tabs"><a data-t="flow" class="${tab==="flow"?"on":""}">Breakdown</a><a data-t="sql" class="${tab==="sql"?"on":""}">Queries (${d.queries.length})</a></div><div class="inner">`;
+  if(tab==="flow"){
+    h+=`<div class="steps h"><span>Step</span><span class="num">Selects</span><span class="num">Updates</span><span class="num">Took (s)</span><span title="This step's time ÷ the whole run. Orange = more than 30%.">Share of run</span></div>`+
+    d.steps.map(x=>`<div class="steps ${x.kind==="Microflow"?"mf":""}"><span style="padding-left:${x.depth*18}px" class="${x.kind==="Microflow"?"mono":""}">${x.name}</span><span class="num">${x.sel||"–"}</span><span class="num">${x.upd||"–"}</span><span class="num mono">${x.s.toFixed(2)}</span><span class="pb"><i class="${x.share>30&&x.depth>0?"warn":""}" style="width:${x.share}%"></i></span></div>`).join("");
+  }else{
+    h+=`<div class="qrow h"><span class="num">Runs</span><span class="num">Avg (ms)</span><span class="num">Total (s)</span><span>Statement – click to open in full</span></div>`+
+    d.queries.map((x,i)=>`<div class="qrow click" data-i="${i}"><span class="num">${x.n}×</span><span class="num mono">${x.avg.toFixed(1)}</span><span class="num mono">${(x.n*x.avg/1000).toFixed(2)}</span><span class="mono ell">${x.q}</span></div>`).join("")||`<div class="empty">No queries captured.</div>`;
+  }
+  return h+`</div>`;}
+
+function render(){
+  const q=$("#q").value.toLowerCase(),thr=CFG.thr/1000,[key,dir]=$("#sort").value.split(":");
+  $("#cfgInfo").textContent=`Capturing > ${thr} s · keeping ${CFG.days} days`;
+  const f=data.filter(d=>d.name.toLowerCase().includes(q)&&d.s>=thr).sort((a,b)=>(a[key]>b[key]?1:-1)*+dir);
+  const max=Math.ceil(f.length/S.size)||1;S.page=Math.min(S.page,max-1);
+  $("#list").innerHTML=f.slice(S.page*S.size,(S.page+1)*S.size).map(d=>{const o=S.open.has(d.id);
+    return `<div class="item ${o?"open":""}" data-id="${d.id}"><div class="cols lrow"><span class="caret">▶</span><span>${fmt(d.t)}</span><span class="mono ell">${d.name}</span><span class="num"><span class="badge ${sc(d.s)}">${d.s.toFixed(2)}</span></span><span class="num">${d.sel}</span><span class="num">${d.upd}</span><span class="num">${d.calls}</span><span class="num muted">${mem(d)}</span></div>${o?`<div class="lbody">${body(d)}</div>`:""}</div>`;}).join("")||`<div class="empty">Nothing found</div>`;
+  $("#count").textContent=`${f.length} executions · page ${S.page+1} of ${max}`;
+  document.querySelectorAll(".lrow").forEach(r=>r.onclick=()=>{const id=+r.parentNode.dataset.id;S.open.has(id)?S.open.delete(id):S.open.add(id);render();});
+  document.querySelectorAll(".lbody .tabs a").forEach(a=>a.onclick=()=>{S.tab[+a.closest(".item").dataset.id]=a.dataset.t;render();});
+  document.querySelectorAll(".qrow.click").forEach(r=>r.onclick=()=>{const d=data.find(x=>x.id===+r.closest(".item").dataset.id);openSql(d.queries[+r.dataset.i]);});}
+$("#q").oninput=()=>{S.page=0;render()};$("#sort").onchange=()=>{S.page=0;render()};$("#cfgBtn").onclick=openSettings;
+$("#prev").onclick=()=>{S.page=Math.max(0,S.page-1);render()};$("#next").onclick=()=>{S.page++;render()};
+render();
+</script>
+</body>
+</html>

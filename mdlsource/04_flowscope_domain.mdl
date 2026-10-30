@@ -1,0 +1,92 @@
+mdl 1;
+
+CREATE OR MODIFY MODULE FlowScope;
+
+CREATE OR MODIFY ENUMERATION FlowScope.StepKind (
+  Microflow 'Microflow',
+  Activity 'Activity'
+);
+
+/** One captured run of an entry-point microflow. Only runs slower than Settings.ThresholdMs are stored. */
+CREATE OR MODIFY PERSISTENT ENTITY FlowScope.Execution (
+  StartedAt: DateTime,
+  MicroflowName: String(500),
+  /** Wall-clock duration of the whole run, in seconds. */
+  DurationSeconds: Decimal DEFAULT 0,
+  /** Database selects of the run, sub-flows included. */
+  SelectCount: Long DEFAULT 0,
+  /** Database inserts, updates and deletes of the run, sub-flows included. */
+  UpdateCount: Long DEFAULT 0,
+  SubflowCount: Integer DEFAULT 0,
+  /** Server heap in MB. Shared by every request, so only a rough hint. */
+  HeapStartMB: Long DEFAULT 0,
+  HeapEndMB: Long DEFAULT 0,
+  HeapDeltaMB: Long DEFAULT 0,
+  /** The runtime's id for the request, as in its log prefix. Ties a run to log lines. */
+  ExecutionId: String(100),
+  NodeName: String(100),
+  /** Page state only: the row is open. Changed in a nanoflow and never committed. */
+  IsExpanded: Boolean DEFAULT false
+)
+INDEX (StartedAt)
+INDEX (DurationSeconds)
+INDEX (MicroflowName);
+
+/** One line of the breakdown: a microflow in the call tree, or an activity inside one. */
+CREATE OR MODIFY PERSISTENT ENTITY FlowScope.ExecutionStep (
+  /** Order in the breakdown, depth first. */
+  Seq: Integer DEFAULT 0,
+  /** 0 = the entry-point microflow, 1 = its activities and sub-flows, and so on. */
+  Depth: Integer DEFAULT 0,
+  Kind: Enumeration(FlowScope.StepKind) DEFAULT FlowScope.StepKind.Activity,
+  Name: String(500),
+  DurationSeconds: Decimal DEFAULT 0,
+  SelectCount: Long DEFAULT 0,
+  UpdateCount: Long DEFAULT 0,
+  /** This step's time as a percentage of the whole run. */
+  SharePercent: Integer DEFAULT 0
+)
+INDEX (Seq);
+
+/** A distinct database statement of a run, with its values replaced by placeholders. Never holds data. */
+CREATE OR MODIFY PERSISTENT ENTITY FlowScope.ExecutionQuery (
+  /** The statement's shape: values are replaced by ?. */
+  Statement: String(unlimited),
+  RunCount: Long DEFAULT 0,
+  /** Average duration of one run of the statement, in milliseconds. */
+  AvgMs: Decimal DEFAULT 0,
+  TotalSeconds: Decimal DEFAULT 0
+);
+
+CREATE OR MODIFY ASSOCIATION FlowScope.ExecutionStep_Execution
+  FROM FlowScope.ExecutionStep TO FlowScope.Execution
+  TYPE Reference
+  OWNER Default
+  ON DELETE CASCADE;
+
+CREATE OR MODIFY ASSOCIATION FlowScope.ExecutionQuery_Execution
+  FROM FlowScope.ExecutionQuery TO FlowScope.Execution
+  TYPE Reference
+  OWNER Default
+  ON DELETE CASCADE;
+
+/** The single settings object. Capture is off until a developer switches it on. */
+CREATE OR MODIFY PERSISTENT ENTITY FlowScope.Settings (
+  CaptureEnabled: Boolean DEFAULT false,
+  /** Runs faster than this are timed in memory and discarded. */
+  ThresholdMs: Long DEFAULT 1000,
+  RetentionDays: Integer DEFAULT 14,
+  /** Regular expression: only matching microflows are profiled. Empty = all. */
+  IncludeRegexp: String(500),
+  /** Regular expression: matching microflows are never profiled. */
+  ExcludeRegexp: String(500) DEFAULT '^(FlowScope|NanoProfiler)\.'
+);
+
+CREATE OR MODIFY MODULE ROLE FlowScope.Developer DESCRIPTION 'Sees and configures the profiler';
+
+GRANT CREATE, DELETE, READ *, WRITE * ON ENTITY FlowScope.Execution TO FlowScope.Developer;
+GRANT CREATE, DELETE, READ *, WRITE * ON ENTITY FlowScope.ExecutionStep TO FlowScope.Developer;
+GRANT CREATE, DELETE, READ *, WRITE * ON ENTITY FlowScope.ExecutionQuery TO FlowScope.Developer;
+GRANT CREATE, DELETE, READ *, WRITE * ON ENTITY FlowScope.Settings TO FlowScope.Developer;
+
+ALTER USER ROLE Administrator ADD MODULE ROLES (FlowScope.Developer);
