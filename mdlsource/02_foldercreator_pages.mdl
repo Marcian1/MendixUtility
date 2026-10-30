@@ -1,0 +1,127 @@
+mdl 1;
+
+CREATE OR MODIFY PAGE FolderCreator.CreateFolders_Popup (
+  Params: ($Demo: FolderCreator.Demo),
+  Title: 'Create folders',
+  Layout: Atlas_Core.PopupLayout,
+  PopupWidth: 520,
+  PopupHeight: 600
+) {
+  dataview dvDemo (DataSource: $Demo, Class: 'fc-body') {
+    listview lvItems (DataSource: nanoflow FolderCreator.DS_Items(Demo = $currentObject), Class: 'fc-list') {
+      container ctnRow (
+        Class: 'fc-row',
+        DynamicClasses: 'fc-depth-' + toString($currentObject/Depth) + (if $currentObject/Status = FolderCreator.ItemStatus.Failed then ' fc-failed' else '')
+      ) {
+        container ctnIcon (
+          Class: 'fc-ico',
+          DynamicClasses: if $currentObject/Status = FolderCreator.ItemStatus.Working then 'fc-ico--working' else if $currentObject/Status = FolderCreator.ItemStatus.Created then 'fc-ico--created' else if $currentObject/Status = FolderCreator.ItemStatus.Existed then 'fc-ico--existed' else if $currentObject/Status = FolderCreator.ItemStatus.Failed then 'fc-ico--failed' else ''
+        ) {
+        }
+        dynamictext txtName (Content: '{1}', ContentParams: ({1} = Name), Class: 'fc-name')
+        dynamictext txtStatus (
+          Content: '{1}',
+          ContentParams: ({1} = Status),
+          Class: 'fc-state',
+          Visible: $currentObject/Status != FolderCreator.ItemStatus.Pending
+        )
+      }
+    }
+    dynamictext txtMessage (
+      Content: '{1}',
+      ContentParams: ({1} = Message),
+      Class: 'fc-msg',
+      DynamicClasses: if $currentObject/State = FolderCreator.RunState.Failed then 'fc-msg--error' else ''
+    )
+    container ctnFooter (Class: 'fc-foot') {
+      actionbutton btnCancel (
+        Caption: 'Cancel',
+        Action: close page,
+        Visible: $currentObject/State = FolderCreator.RunState.Ready
+      )
+      actionbutton btnClose (
+        Caption: 'Close',
+        Action: close page,
+        Visible: $currentObject/State = FolderCreator.RunState.Failed or $currentObject/State = FolderCreator.RunState.Done
+      )
+      actionbutton btnCreate (
+        Caption: 'Create folders',
+        Action: call nanoflow FolderCreator.NAN_CreateFolders(Demo = $currentObject),
+        ButtonStyle: primary,
+        Visible: $currentObject/State = FolderCreator.RunState.Ready
+      )
+      actionbutton btnRetry (
+        Caption: 'Try again',
+        Action: call nanoflow FolderCreator.NAN_CreateFolders(Demo = $currentObject),
+        ButtonStyle: primary,
+        Visible: $currentObject/State = FolderCreator.RunState.Failed
+      )
+    }
+  }
+};
+
+/** Fills the pop-up with the six pending folders, then opens it. */
+CREATE OR MODIFY NANOFLOW FolderCreator.NAN_OpenPopup ($Demo: FolderCreator.Demo)
+BEGIN
+  RETRIEVE $Old FROM $Demo/FolderCreator.FolderItem_Demo;
+  DELETE $Old;
+  CHANGE $Demo (State = FolderCreator.RunState.Ready, Message = '');
+  $A = CREATE FolderCreator.FolderItem (Name = 'Contracts', Depth = 0, Sequence = 1, FolderItem_Demo = $Demo);
+  $B = CREATE FolderCreator.FolderItem (Name = '2026', Depth = 1, Sequence = 2, FolderItem_Demo = $Demo);
+  $C = CREATE FolderCreator.FolderItem (Name = 'Q3', Depth = 2, Sequence = 3, FolderItem_Demo = $Demo);
+  $D = CREATE FolderCreator.FolderItem (Name = 'Q4', Depth = 2, Sequence = 4, FolderItem_Demo = $Demo);
+  $E = CREATE FolderCreator.FolderItem (Name = 'Invoices', Depth = 1, Sequence = 5, FolderItem_Demo = $Demo);
+  $F = CREATE FolderCreator.FolderItem (Name = 'Archive', Depth = 1, Sequence = 6, FolderItem_Demo = $Demo);
+  SHOW PAGE FolderCreator.CreateFolders_Popup (Demo = $Demo);
+END;
+
+CREATE OR MODIFY PAGE FolderCreator.Home (
+  Title: 'Contract documents',
+  Layout: Atlas_Core.Atlas_Default,
+  Url: 'contract-documents'
+) {
+  layoutgrid lgMain {
+    row {
+      column (DesktopWidth: 12) {
+        dataview dvDemo (DataSource: nanoflow FolderCreator.DS_Demo) {
+          dynamictext txtTitle (Content: 'Contract documents', RenderMode: H1)
+          container ctnCard (Class: 'fc-card') {
+            dynamictext txtIntro (Content: 'Create the folder structure for this supplier in Content Server.', RenderMode: Paragraph)
+            actionbutton btnCreate (
+              Caption: 'Create folders',
+              Action: call nanoflow FolderCreator.NAN_OpenPopup(Demo = $currentObject),
+              ButtonStyle: primary
+            )
+          }
+          container ctnProto (Class: 'fc-proto') {
+            dynamictext txtProto (Content: 'PROTOTYPE ONLY', RenderMode: Paragraph, Class: 'text-muted')
+            combobox cmbScenario (Label: 'Scenario', Attribute: Scenario)
+            combobox cmbSpeed (Label: 'Speed', Attribute: Speed)
+          }
+        }
+      }
+    }
+  }
+};
+
+CREATE OR MODIFY MODULE ROLE FolderCreator.User;
+
+GRANT CREATE, DELETE, READ *, WRITE * ON ENTITY FolderCreator.Demo TO FolderCreator.User;
+GRANT CREATE, DELETE, READ *, WRITE * ON ENTITY FolderCreator.FolderItem TO FolderCreator.User;
+GRANT VIEW ON PAGE FolderCreator.Home TO FolderCreator.User;
+GRANT VIEW ON PAGE FolderCreator.CreateFolders_Popup TO FolderCreator.User;
+GRANT EXECUTE ON MICROFLOW FolderCreator.SUB_GetOTDSTicket TO FolderCreator.User;
+GRANT EXECUTE ON MICROFLOW FolderCreator.SUB_GetOrCreateFolder TO FolderCreator.User;
+GRANT EXECUTE ON NANOFLOW FolderCreator.DS_Demo TO FolderCreator.User;
+GRANT EXECUTE ON NANOFLOW FolderCreator.DS_Items TO FolderCreator.User;
+GRANT EXECUTE ON NANOFLOW FolderCreator.NAN_OpenPopup TO FolderCreator.User;
+GRANT EXECUTE ON NANOFLOW FolderCreator.NAN_CreateFolders TO FolderCreator.User;
+
+ALTER USER ROLE User ADD MODULE ROLES (FolderCreator.User);
+ALTER USER ROLE Administrator ADD MODULE ROLES (FolderCreator.User);
+
+CREATE OR MODIFY NAVIGATION Responsive
+  HOME PAGE FolderCreator.Home
+{
+  MENU ITEM 'Contract documents' ( OnClick: SHOW PAGE FolderCreator.Home, Icon: GLYPH 57377 )
+};

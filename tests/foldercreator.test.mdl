@@ -1,0 +1,51 @@
+/**
+ * @test Mock authentication returns a ticket
+ * @expect $result = 'MOCK-OTDS-TICKET'
+ */
+$result = call microflow FolderCreator.SUB_GetOTDSTicket();
+/
+
+/**
+ * @test Missing folder is created
+ * @expect $result = FolderCreator.ItemStatus.Created
+ */
+$result = call microflow FolderCreator.SUB_GetOrCreateFolder(
+  Ticket = 'MOCK-OTDS-TICKET', Name = 'Q3', Scenario = FolderCreator.Scenario.AllSucceed
+);
+/
+
+/**
+ * @test Existing folder is reused
+ * @expect $result = FolderCreator.ItemStatus.Existed
+ */
+$result = call microflow FolderCreator.SUB_GetOrCreateFolder(
+  Ticket = 'MOCK-OTDS-TICKET', Name = '2026', Scenario = FolderCreator.Scenario.SomeExist
+);
+/
+
+/**
+ * @test Q4 fails in the FailAtQ4 scenario
+ * @expect $result = FolderCreator.ItemStatus.Failed
+ */
+$result = call microflow FolderCreator.SUB_GetOrCreateFolder(
+  Ticket = 'MOCK-OTDS-TICKET', Name = 'Q4', Scenario = FolderCreator.Scenario.FailAtQ4
+);
+/
+
+/**
+ * @test Q3 still succeeds in the FailAtQ4 scenario
+ * @expect $result = FolderCreator.ItemStatus.Created
+ */
+$result = call microflow FolderCreator.SUB_GetOrCreateFolder(
+  Ticket = 'MOCK-OTDS-TICKET', Name = 'Q3', Scenario = FolderCreator.Scenario.FailAtQ4
+);
+/
+
+/**
+ * @test The ticket is what lets the call through
+ * @expect $result = FolderCreator.ItemStatus.Failed
+ */
+$result = call microflow FolderCreator.SUB_GetOrCreateFolder(
+  Ticket = '', Name = 'Q3', Scenario = FolderCreator.Scenario.AllSucceed
+);
+/

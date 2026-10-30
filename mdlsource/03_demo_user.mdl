@@ -1,0 +1,4 @@
+mdl 1;
+
+/** Local test login for the prototype. */
+CREATE OR MODIFY DEMO USER 'demo_user' ( Password: 'DemoUser12345', UserRoles: (User) );

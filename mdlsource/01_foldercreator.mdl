@@ -1,0 +1,142 @@
+mdl 1;
+
+CREATE OR MODIFY MODULE FolderCreator;
+
+CREATE OR MODIFY ENUMERATION FolderCreator.Scenario (
+  AllSucceed 'All succeed',
+  SomeExist 'Some already exist',
+  FailAtQ4 'Fail at Q4'
+);
+
+CREATE OR MODIFY ENUMERATION FolderCreator.ItemStatus (
+  Pending 'Pending',
+  Working 'Creating…',
+  Created 'Created',
+  Existed 'Already existed',
+  Failed 'Failed'
+);
+
+CREATE OR MODIFY ENUMERATION FolderCreator.Speed (
+  Slow 'Slow',
+  Normal 'Normal',
+  Fast 'Fast'
+);
+
+CREATE OR MODIFY ENUMERATION FolderCreator.RunState (
+  Ready 'Ready',
+  Running 'Running',
+  Failed 'Failed',
+  Done 'Done'
+);
+
+/** Page context: the prototype scenario, the run state and the message the pop-up shows. */
+CREATE OR MODIFY NON-PERSISTENT ENTITY FolderCreator.Demo (
+  Scenario: Enumeration(FolderCreator.Scenario) DEFAULT FolderCreator.Scenario.AllSucceed,
+  State: Enumeration(FolderCreator.RunState) DEFAULT FolderCreator.RunState.Ready,
+  Speed: Enumeration(FolderCreator.Speed) DEFAULT FolderCreator.Speed.Normal,
+  Message: String(500)
+);
+
+/** One folder of the structure. Display carries the indent. */
+CREATE OR MODIFY NON-PERSISTENT ENTITY FolderCreator.FolderItem (
+  Name: String(100),
+  Depth: Integer DEFAULT 0,
+  Sequence: Integer,
+  Status: Enumeration(FolderCreator.ItemStatus) DEFAULT FolderCreator.ItemStatus.Pending
+);
+
+CREATE OR MODIFY ASSOCIATION FolderCreator.FolderItem_Demo
+  FROM FolderCreator.FolderItem TO FolderCreator.Demo
+  TYPE Reference;
+
+/** Stands in for a real wait so the steps can be followed in the pop-up. */
+CREATE OR MODIFY JAVASCRIPT ACTION FolderCreator.JSA_Wait(Milliseconds: Integer) RETURNS Boolean
+PLATFORM Web
+AS $$
+await new Promise(function (resolve) { setTimeout(resolve, Number(milliseconds)); });
+return true;
+$$;
+
+-- Mock REST calls: no HTTP, only parameters and return values.
+
+/** Mock of the OTDS authentication call. */
+CREATE OR MODIFY MICROFLOW FolderCreator.SUB_GetOTDSTicket ()
+RETURNS String AS $Ticket
+BEGIN
+  LOG INFO NODE 'FolderCreator' 'POST /otdsws/rest/authentication -> ticket issued';
+  RETURN 'MOCK-OTDS-TICKET';
+END;
+
+/** Mock of GET /nodes?name=...; the ticket goes in the OTCSTICKET header. */
+CREATE OR MODIFY MICROFLOW FolderCreator.SUB_GetFolder ($Ticket: String, $Name: String, $Scenario: FolderCreator.Scenario)
+RETURNS Boolean AS $Exists
+BEGIN
+  LOG INFO NODE 'FolderCreator' 'GET folder ' + $Name + ' [OTCSTICKET: ' + $Ticket + ']';
+  RETURN $Scenario = FolderCreator.Scenario.SomeExist and ($Name = 'Contracts' or $Name = '2026');
+END;
+
+/** Mock of POST /nodes; fails without a ticket, and for Q4 in the FailAtQ4 scenario. */
+CREATE OR MODIFY MICROFLOW FolderCreator.SUB_CreateFolder ($Ticket: String, $Name: String, $Scenario: FolderCreator.Scenario)
+RETURNS Boolean AS $Created
+BEGIN
+  LOG INFO NODE 'FolderCreator' 'POST folder ' + $Name + ' [OTCSTICKET: ' + $Ticket + ']';
+  RETURN $Ticket != '' and not ($Scenario = FolderCreator.Scenario.FailAtQ4 and $Name = 'Q4');
+END;
+
+/** Get; if the folder is not there, create it. */
+CREATE OR MODIFY MICROFLOW FolderCreator.SUB_GetOrCreateFolder ($Ticket: String, $Name: String, $Scenario: FolderCreator.Scenario)
+RETURNS Enumeration(FolderCreator.ItemStatus) AS $Status
+BEGIN
+  $Exists = CALL MICROFLOW FolderCreator.SUB_GetFolder (Ticket = $Ticket, Name = $Name, Scenario = $Scenario);
+  IF $Exists THEN
+    RETURN FolderCreator.ItemStatus.Existed;
+  END IF;
+  $Created = CALL MICROFLOW FolderCreator.SUB_CreateFolder (Ticket = $Ticket, Name = $Name, Scenario = $Scenario);
+  IF $Created THEN
+    RETURN FolderCreator.ItemStatus.Created;
+  END IF;
+  RETURN FolderCreator.ItemStatus.Failed;
+END;
+
+/** The six folders in order. */
+CREATE OR MODIFY NANOFLOW FolderCreator.DS_Items ($Demo: FolderCreator.Demo)
+RETURNS List of FolderCreator.FolderItem AS $Items
+BEGIN
+  RETRIEVE $Unsorted FROM $Demo/FolderCreator.FolderItem_Demo;
+  $Items = SORT $Unsorted BY Sequence ASC;
+  RETURN $Items;
+END;
+
+CREATE OR MODIFY NANOFLOW FolderCreator.DS_Demo ()
+RETURNS FolderCreator.Demo AS $Demo
+BEGIN
+  $Demo = CREATE FolderCreator.Demo ();
+  RETURN $Demo;
+END;
+
+/** Ticket first, then one get-or-create per folder, in order. Stops at the first failure; running it again skips what is done. */
+CREATE OR MODIFY NANOFLOW FolderCreator.NAN_CreateFolders ($Demo: FolderCreator.Demo)
+BEGIN
+  CHANGE $Demo (State = FolderCreator.RunState.Running, Message = '');
+  $Ticket = CALL MICROFLOW FolderCreator.SUB_GetOTDSTicket ();
+  $Items = CALL NANOFLOW FolderCreator.DS_Items (Demo = $Demo);
+  LOOP $Item IN $Items BEGIN
+    IF $Item/Status != FolderCreator.ItemStatus.Created and $Item/Status != FolderCreator.ItemStatus.Existed THEN
+      CHANGE $Item (Status = FolderCreator.ItemStatus.Working);
+      $Wait = CALL JAVASCRIPT ACTION FolderCreator.JSA_Wait (Milliseconds = if $Demo/Speed = FolderCreator.Speed.Slow then 800 else if $Demo/Speed = FolderCreator.Speed.Fast then 100 else 400);
+      $Status = CALL MICROFLOW FolderCreator.SUB_GetOrCreateFolder (Ticket = $Ticket, Name = $Item/Name, Scenario = $Demo/Scenario);
+      CHANGE $Item (Status = $Status);
+      IF $Status = FolderCreator.ItemStatus.Failed THEN
+        CHANGE $Demo (State = FolderCreator.RunState.Failed, Message = 'Couldn''t create ' + $Item/Name + '. Click Try again to continue.');
+        BREAK;
+      END IF;
+    END IF;
+  END LOOP;
+  $Bad = FILTER $Items BY Status = FolderCreator.ItemStatus.Failed;
+  $Failures = COUNT $Bad;
+  IF $Failures = 0 THEN
+    $New = FILTER $Items BY Status = FolderCreator.ItemStatus.Created;
+    $Created = COUNT $New;
+    CHANGE $Demo (State = FolderCreator.RunState.Done, Message = '6 folders ready (' + toString($Created) + ' created, ' + toString(6 - $Created) + ' already existed).');
+  END IF;
+END;
