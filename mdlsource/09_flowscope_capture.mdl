@@ -38,6 +38,15 @@ CREATE OR MODIFY MICROFLOW FlowScope.ASU_FlowScope ()
 RETURNS Boolean AS $Ok
 BEGIN
   $Settings = CALL MICROFLOW FlowScope.SUB_GetSettings();
+  -- Databases made before the default changed still hold the old pattern, which hides FlowScope's own flows
+  -- (the sample included). Move them to the new default; the commit applies the settings.
+  IF $Settings/ExcludeRegexp != empty THEN
+    IF startsWith($Settings/ExcludeRegexp, '^(FlowScope') THEN
+      CHANGE $Settings (ExcludeRegexp = '^NanoProfiler\.');
+      COMMIT $Settings;
+      RETURN true;
+    END IF;
+  END IF;
   CALL MICROFLOW FlowScope.ACT_ApplySettings(Settings = $Settings);
   RETURN true;
 END;

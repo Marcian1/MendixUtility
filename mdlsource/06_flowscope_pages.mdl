@@ -25,11 +25,33 @@ BEGIN
   SHOW PAGE FlowScope.Settings_Popup (Settings = $Settings);
 END;
 
+/** The settings object for the status bar. Read only; SUB_GetSettings is the one that creates it. */
+CREATE OR MODIFY MICROFLOW FlowScope.DS_Settings ()
+RETURNS FlowScope.Settings AS $Settings
+BEGIN
+  RETRIEVE $Found FROM FlowScope.Settings FIRST;
+  RETURN $Found;
+END;
+
+/** Switches capture on. Committing runs the after-commit event, which applies it at once. */
+CREATE OR MODIFY MICROFLOW FlowScope.SUB_EnableCapture ($Settings: FlowScope.Settings)
+BEGIN
+  CHANGE $Settings (CaptureEnabled = true);
+  COMMIT $Settings REFRESH;
+END;
+
+/** The status bar's "Turn on capture" button. */
+CREATE OR MODIFY MICROFLOW FlowScope.ACT_EnableCapture ($Settings: FlowScope.Settings)
+BEGIN
+  CALL MICROFLOW FlowScope.SUB_EnableCapture(Settings = $Settings);
+END;
+
 CREATE OR MODIFY MICROFLOW FlowScope.ACT_DeleteAllExecutions ()
 BEGIN
   RETRIEVE $All FROM FlowScope.Execution;
   DELETE $All;
 END;
+
 /** The full statement, as a read-only text. */
 CREATE OR MODIFY PAGE FlowScope.Query_Popup (
   Params: ($Query: FlowScope.ExecutionQuery),
@@ -100,6 +122,22 @@ CREATE OR MODIFY PAGE FlowScope.Executions (
       column (DesktopWidth: 12) {
         dynamictext txtTitle (Content: 'Microflow executions', RenderMode: H2)
         dynamictext txtSub (Content: 'Slow microflow runs, captured automatically. Click a run to see where the time went.', Class: 'fs-sub')
+        dataview dvStatus (DataSource: MICROFLOW FlowScope.DS_Settings) {
+          container ctnOff (Class: 'fs-banner fs-banner--off', Visible: not($currentObject/CaptureEnabled)) {
+            dynamictext txtOff (Content: 'Capture is off, so nothing is being recorded. Turn it on, then run a flow.')
+            actionbutton btnTurnOn (
+              Caption: 'Turn on capture',
+              Action: call microflow FlowScope.ACT_EnableCapture(Settings = $currentObject),
+              ButtonStyle: primary
+            )
+          }
+          container ctnOn (Class: 'fs-banner', Visible: $currentObject/CaptureEnabled) {
+            dynamictext txtOn (
+              Content: 'Capturing microflows slower than {1} ms, keeping {2} days. A run shows up a moment after it finishes: press refresh in the search bar.',
+              ContentParams: ({1} = ThresholdMs, {2} = RetentionDays)
+            )
+          }
+        }
         container ctnCard (Class: 'fs-card') {
           container ctnBar (Class: 'fs-toolbar') {
             actionbutton btnSettings (Caption: 'Settings', Action: call microflow FlowScope.ACT_OpenSettings)
@@ -230,6 +268,8 @@ GRANT VIEW ON PAGE FlowScope.Query_Popup TO FlowScope.Developer;
 GRANT EXECUTE ON MICROFLOW FlowScope.SUB_GetSettings TO FlowScope.Developer;
 GRANT EXECUTE ON MICROFLOW FlowScope.ACT_OpenSettings TO FlowScope.Developer;
 GRANT EXECUTE ON MICROFLOW FlowScope.ACT_DeleteAllExecutions TO FlowScope.Developer;
+GRANT EXECUTE ON MICROFLOW FlowScope.DS_Settings TO FlowScope.Developer;
+GRANT EXECUTE ON MICROFLOW FlowScope.ACT_EnableCapture TO FlowScope.Developer;
 GRANT EXECUTE ON MICROFLOW FlowScope.SAMPLE_RunFlow TO FlowScope.Developer;
 GRANT EXECUTE ON NANOFLOW FlowScope.NAN_ToggleExpanded TO FlowScope.Developer;
 

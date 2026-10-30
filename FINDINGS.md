@@ -64,3 +64,11 @@ Persists slow microflow runs and shows them in an expandable list (`FlowScope.Ex
 - The sample's entry flow is `SAMPLE_`, not `ACT_`, because lint CONV010 wants `ACT_` flows to delegate to `SUB_` and the sample shows every activity type on purpose. Report score 78/100 (was 82 before the sample).
 - The Save button on `Settings_Popup` is `save changes close page` (set in the app, now in `06_flowscope_pages.mdl`).
 - Browser-pane clicks by element reference can land off target; clicking by screenshot coordinates or repeating the click works.
+
+### "The sample shows nothing" (2026-10-30)
+
+- **Cause:** on a new database FlowScope starts with capture **off** (logged as "FlowScope capture is off"), and nothing on the page said so, so a run of the sample was never recorded. A database made before the exclude-pattern default changed also kept `^(FlowScope|NanoProfiler)\.`, which hides every FlowScope flow, the sample included.
+- **Fix:** a status bar above the list (`DS_Settings` data source). Off: an orange "Capture is off, so nothing is being recorded" with a "Turn on capture" button (`ACT_EnableCapture` -> `SUB_EnableCapture`; the commit fires the after-commit event). On: "Capturing microflows slower than N ms, keeping D days". `ASU_FlowScope` moves the old exclude default to `^NanoProfiler\.` at startup; guarded so an empty pattern cannot break startup.
+- **Verified on an empty database** (`--db-name freshcheck`, since removed): banner shown, one click turned capture on, `SAMPLE_RunFlow` ran and `FlowScope.SAMPLE_RunFlow` (3.97 s) was listed after pressing refresh. Setting the old pattern through the pop-up and restarting put `^NanoProfiler\.` back (read with `mxcli oql`). The Settings pop-up has no demo button and Save closes it.
+- A shape change to a stored microflow (a new `RETURN`, a new decision) cannot be spliced by `exec`; drop and create it in one run, once, then the script re-runs unchanged.
+- Report score 77/100.

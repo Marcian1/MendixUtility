@@ -60,3 +60,8 @@ $fs-warn: #F99B1D;
   .fs-cols > *:nth-child(2), .fs-cols > *:nth-child(n+5) { display: none; }
   .fs-body { padding-left: 16px; }
 }
+
+.fs-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 12px; border: 1px solid $fs-line; border-radius: 4px; background: #fff; color: $fs-text2; font-size: 13px; }
+.fs-banner .mx-text { flex: 1; min-width: 200px; }
+.fs-banner--off { background: #FEF3E0; border-color: $fs-warn; color: #3B4252; }
+.fs-banner--off .mx-text { font-weight: 600; }
