@@ -1,0 +1,182 @@
+# Message definitions
+
+Supporting reference for [json-structures-and-mappings](../SKILL.md).
+
+A mapping's source can also be a **message definition** — 74 of the 327 mappings
+in the demo corpus (22.6%), and the only non-JSON source MDL can create. Unlike
+an XML schema (an imported `.xsd`) or a web service (a WSDL), it holds nothing
+external: it is a **selection over the domain model**.
+
+```sql
+mdl 1;
+create message definition collection Sales.MD_Order
+  folder 'Messages'
+{
+  definition OrderMessage for Sales.Order as 'Orders' {
+    OrderId,
+    Total as 'GrandTotal',
+    Sales.OrderLine_Order/Sales.OrderLine as 'Lines' { Sku, Quantity },
+    Sales.Order_Customer/Sales.Customer { FirstName, Address example 'Kerstraat 5' }
+  }
+};
+```
+
+A **bare name is an attribute**; `Assoc/Module.Entity` is an **association** with
+its own members — the same discriminator import and export mappings use. A
+mapping then binds to `Module.Collection.Definition`, a three-part reference.
+
+**Name the association's target entity.** It is not decoration: the stored
+cardinality — single object or list — is derived from the **direction of
+traversal** and the **association's type** together.
+
+|                  | forward (from the FK owner) | reverse            |
+|------------------|-----------------------------|--------------------|
+| **Reference**    | single object               | list               |
+| **ReferenceSet** | list                        | list               |
+
+Reaching `Customer` from `Order` follows the foreign key and gives a single
+object; reaching `Order` from `Customer` is the reverse and gives a list — the
+same association, both ways. A **ReferenceSet is a list in both directions**,
+because a set is many at both ends.
+
+An association that connects the two entities in neither direction is
+**refused**, because mxcli would have to guess. Guessing is worse than
+refusing in opposite ways on the two halves of the rule, which is worth knowing
+when something looks wrong: a wrong *direction* builds cleanly and silently
+exposes a list as a single object, while a wrong *type* is caught — mxbuild
+reports CE6524 (`The occurrence of '...' has changed`) on the definition and
+CE0295 (`Association '...' is not allowed`) on any mapping element bound to it.
+
+**Inherited attributes are named like the entity's own.** mxcli resolves each to
+the entity that declares it, which is what Mendix stores; qualifying one against
+the entity that merely uses it is CE1613.
+
+### Mendix 11.15: one document per definition
+
+Mendix 11.15 removed the collection. Each definition is a separate document,
+and Studio Pro's converter turns a collection into a folder of the same name
+holding one document per definition. The statement is the collection's
+`definition` entry on its own:
+
+```sql
+mdl 1;
+create message definition Sales.OrderMessage
+  folder 'Messages/MD_Order'
+  for Sales.Order as 'Orders' {
+    OrderId,
+    Sales.Order_Customer/Sales.Customer { FirstName }
+  };
+alter message definition Sales.OrderMessage add member LastName in Customer;
+list message definitions in Sales;
+describe message definition Sales.OrderMessage;
+drop message definition Sales.OrderMessage;
+```
+
+A mapping names it in **two** parts (`with message definition Sales.OrderMessage`).
+A three-part name from an older script (`Sales.MD_Order.OrderMessage`) still
+resolves on a converted project and is stored as the two-part one.
+
+Which form applies depends on the project version. On 11.15 the collection
+statements are refused with a hint to use the document form. Below 11.15 the
+document form is refused with a hint to use the collection. Use `list message
+definitions` on 11.15 and `list message definition collections` before it.
+
+### Editing one without restating it
+
+Real definitions nest deeply, so a whole-document rewrite is a poor tool for
+"expose one more attribute". `ALTER` edits the stored document and leaves the
+rest alone:
+
+```sql
+mdl 1;
+alter message definition Sales.MD_Order.OrderMessage add member Total;
+alter message definition Sales.MD_Order.OrderMessage add member LastName in Customer;
+alter message definition Sales.MD_Order.OrderMessage set member Total as 'GrandTotal';
+alter message definition Sales.MD_Order.OrderMessage drop member Sku in Lines;
+
+alter message definition collection Sales.MD_Order add definition Line for Sales.Line { Sku };
+alter message definition collection Sales.MD_Order rename definition Line to OrderLine;
+alter message definition collection Sales.MD_Order drop definition if exists OrderLine;
+```
+
+`in <path>` reaches a nested member, written in **exposed names**. `DROP MEMBER`
+takes the member's **original** name, though — the attribute's, or for an
+association the target entity's — so the two halves of `drop member Tag in
+Orders` are named differently on purpose.
+
+`SET` changes only the exposed name — it is not a model rename, which is why the
+verb is not `RENAME`.
+
+### Dropping something a definition still needs
+
+A definition is a selection over the domain model held **by qualified name**, and
+nothing keeps the two in step. Both directions are refused rather than left to
+mxbuild:
+
+- **A definition a mapping still references** — refused, naming the mappings.
+- **An association a definition still exposes** — refused, printing the `alter …
+  drop member` statement for each definition that exposes it, ready to run. All
+  of them are listed: an association exposed in both directions dangles from the
+  other one if you clear only the first.
+
+Without the second, `drop association` reported success and mxbuild reported
+CE1613 at the definition — and `describe` went on emitting the dangling member,
+so the break survived a describe → exec round trip. The guard covers message
+definitions only: a microflow retrieve or an object mapping element over the same
+association is still your own CE1613 to resolve.
+
+### What mxcli does not guess
+
+Studio Pro **pluralises** a repeating element's exposed name (`Order` →
+`Orders`). mxcli defaults to the entity's own name and lets `as 'Orders'` say
+otherwise — reproducing English inflection needs `-y → -ies` and an
+already-plural detector, and a name the author writes beats one a heuristic
+guesses. Everything else is derived from the domain model.
+
+`list message definition collections [in Module]` lists them; `describe` emits
+re-executable MDL.
+
+### SOAP-sourced mappings are refused, not rewritten
+
+A mapping can also be sourced from an **imported web service** — a WSDL binding
+(which service, which operation, which root element). MDL cannot spell that, so
+`create or replace|modify` over such a mapping is **refused** rather than
+rebuilding it without the binding, which would leave it with no schema source at
+all (**CE6896**, plus **CE0270**). `describe` marks the source instead of
+emitting nothing, because the silent output parses and re-executing it is what
+deletes the binding (ako/mxcli#365):
+
+```sql
+create or modify import mapping Legacy.IMM_Order
+  -- SOURCE NOT REPRESENTABLE: imported web service Legacy.WS_Orders (service OrderService, operation GetOrder)
+  -- re-executing this statement would drop it (CE6896); mxcli refuses the rewrite
+{ ... }
+```
+
+Edit such a mapping in Studio Pro. Note that a consumed SOAP service does **not**
+create XML schema documents — the WSDL's XSDs are held inline on the web-service
+document — so `with xml schema` is a different path and does not help here.
+
+### The `with` clause is resolved, not written through
+
+A mapping's schema source — `with json structure M.X` or `with xml schema M.Y` —
+is checked against the project by both `mxcli check -p` and `exec`, and a name
+that resolves to nothing is refused with the documents that would have worked.
+mxbuild otherwise reports it as **CE1613** "… no longer exists" at the end of a
+build (ako/mxcli#259).
+
+For JSON structures a typo used to be worse than a dangling reference: the schema
+index is empty whenever the structure cannot be loaded **for any reason**, and an
+empty index reads as "there is nothing to validate against" — so one typo in the
+source name switched off every member check in the mapping.
+
+Two things the check deliberately does not do:
+
+- A structure the **same script** creates counts as existing. Create the
+  structure, then map over it, is the normal shape.
+- A project with **no** XML schemas disables the XML half rather than refusing
+  every mapping. There is no `create xml schema` in MDL — an XML schema is only
+  ever imported into the project by hand — so having none is ordinary, not
+  evidence of a typo.
+
+---
