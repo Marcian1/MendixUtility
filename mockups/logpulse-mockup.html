@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LogPulse – one question</title>
+<!--
+  ONE QUESTION: "How often did this log message happen, and show me every occurrence."
+  MENDIX MAPPING
+  #search   = Text box + Search button on non-persistent LogPulse.Filter (MessageText, Range). One microflow does the work.
+  .count    = Text widgets on LogPulse.Filter (Total, FirstSeen, LastSeen)
+  .days     = List view on non-persistent LogPulse.DayCount (Day, Count). Bar width = Count / max, via expression.
+  .list     = List view on non-persistent LogPulse.Occurrence (Time, Level, Node, Message, Details), newest first.
+              Row click toggles IsExpanded (no commit) to show Details.
+  Nothing is persisted. All entities are non-persistent and rebuilt on each search.
+-->
+<style>
+:root{--primary:#264AE5;--bad:#E33F4E;--warn:#F99B1D;--ink:#0A1325;--mute:#6C7180;--line:#E7E8EA;--soft:#F5F6F6;--bg:#F8F8F8;--r:4px;
+--font:"Open Sans","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 var(--font);color:var(--ink);background:var(--bg)}
+.top{background:var(--ink);color:#fff;height:52px;display:flex;align-items:center;padding:0 20px;font-weight:600}
+main{max-width:960px;margin:0 auto;padding:24px}
+h1{margin:0 0 16px;font-size:22px}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:16px}
+.mono{font-family:Consolas,monospace;font-size:13px}.mute{color:var(--mute)}
+.search{display:flex;gap:10px;flex-wrap:wrap}
+input,select,button{height:36px;font:inherit;border:1px solid #CED0D3;border-radius:var(--r);padding:0 10px;background:#fff}
+input{flex:1;min-width:240px}
+button{background:var(--primary);border-color:var(--primary);color:#fff;padding:0 18px;cursor:pointer}
+
+.summary{display:flex;gap:32px;flex-wrap:wrap;align-items:baseline}
+.summary .v{font-size:34px;font-weight:700;line-height:1.1}
+.summary .l{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
+
+.day{display:grid;grid-template-columns:70px 1fr 40px;gap:10px;align-items:center;padding:3px 0}
+.day i{display:block;height:12px;background:var(--bad);border-radius:2px}
+
+details{border-top:1px solid var(--line)}
+summary{display:grid;grid-template-columns:150px 70px 170px 1fr;gap:10px;padding:9px 4px;cursor:pointer;list-style:none;align-items:center}
+summary:hover{background:#EEF1FD}
+.badge{display:inline-block;padding:0 8px;border-radius:10px;font-size:12px;font-weight:600;color:#fff;background:var(--bad)}
+.body{background:var(--soft);padding:10px 12px 14px;font-size:13px}
+.body dl{display:grid;grid-template-columns:110px 1fr;gap:2px 10px;margin:0 0 8px}
+.body dt{color:var(--mute)}.body dd{margin:0}
+pre{margin:0;padding:10px;background:#fff;border:1px solid var(--line);border-radius:var(--r);white-space:pre-wrap;overflow:auto}
+@media(max-width:700px){summary{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="top">LogPulse</div>
+<main>
+  <h1>How often did this message happen?</h1>
+
+  <div class="card search" id="search">
+    <input value="An error has occurred. Please contact your system administrator">
+    <select><option>Last 24 hours</option><option selected>Last 7 days</option><option>Last 30 days</option></select>
+    <button>Search</button>
+  </div>
+
+  <div class="card summary">
+    <div><div class="v">137</div><div class="l">Occurrences</div></div>
+    <div><div class="v">Sat 09:14</div><div class="l">First seen</div></div>
+    <div><div class="v">Today 13:58</div><div class="l">Last seen</div></div>
+  </div>
+
+  <div class="card days">
+    <div class="day"><span class="mute">Mon</span><i style="width:6%"></i><b>4</b></div>
+    <div class="day"><span class="mute">Tue</span><i style="width:3%"></i><b>2</b></div>
+    <div class="day"><span class="mute">Wed</span><i style="width:0"></i><b>0</b></div>
+    <div class="day"><span class="mute">Thu</span><i style="width:8%"></i><b>5</b></div>
+    <div class="day"><span class="mute">Fri</span><i style="width:15%"></i><b>9</b></div>
+    <div class="day"><span class="mute">Sat</span><i style="width:60%"></i><b>38</b></div>
+    <div class="day"><span class="mute">Today</span><i style="width:100%"></i><b>79</b></div>
+  </div>
+
+  <div class="card list">
+    <div class="mute" style="margin-bottom:8px">Newest first · click a row for details</div>
+
+    <details open>
+      <summary><span class="mono">Today 13:58:02</span><span class="badge">ERROR</span><span class="mono mute">Orders</span><span>An error has occurred. Please contact your system administrator.</span></summary>
+      <div class="body">
+        <dl><dt>User</dt><dd>j.smith</dd><dt>Session</dt><dd class="mono">a3f9…c21</dd><dt>Request</dt><dd class="mono">POST /xas/ · executeaction</dd><dt>Microflow</dt><dd>MyFirstModule.ACT_Order_Submit</dd></dl>
+        <pre class="mono">Cannot invoke "IMendixObject.getValue()" because "order" is null
+  at myfirstmodule.actions.SubmitOrder.executeAction(SubmitOrder.java:41)
+  at com.mendix.basis.actionmanagement.CoreAction.execute(...)</pre>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="mono">Today 13:41:19</span><span class="badge">ERROR</span><span class="mono mute">Orders</span><span>An error has occurred. Please contact your system administrator.</span></summary>
+      <div class="body"><dl><dt>User</dt><dd>a.jones</dd><dt>Microflow</dt><dd>MyFirstModule.ACT_Order_Submit</dd></dl><pre class="mono">Cannot invoke "IMendixObject.getValue()" because "order" is null …</pre></div>
+    </details>
+
+    <details>
+      <summary><span class="mono">Today 12:07:55</span><span class="badge">ERROR</span><span class="mono mute">Core</span><span>An error has occurred. Please contact your system administrator.</span></summary>
+      <div class="body"><dl><dt>User</dt><dd>m.lee</dd><dt>Microflow</dt><dd>MyFirstModule.DS_Customer_Get</dd></dl><pre class="mono">java.sql.SQLTimeoutException: Query timed out …</pre></div>
+    </details>
+  </div>
+</main>
+</body>
+</html>
