@@ -1,0 +1,152 @@
+@import '../../../theme/web/custom-variables';
+
+// Resource Monitor dashboard. The rm-* classes are set on the Dashboard page (see mdlsource/resourcemonitor_12_overview_page.mdl).
+$rm-ok: #3cb33d;
+$rm-warn: #f99b1d;
+$rm-bad: #e33f4e;
+$rm-border: #ced0d3;
+$rm-muted: #6c7180;
+$rm-primary: #264ae5;
+
+.rm-card {
+  background: #fff;
+  border: 1px solid $rm-border;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(10, 19, 37, 0.08);
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+.rm-card-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+
+  h5,
+  p {
+    margin: 0;
+  }
+}
+
+.rm-hint {
+  color: $rm-muted;
+  font-size: 12px;
+  margin: 0;
+}
+
+.rm-right {
+  text-align: right;
+}
+
+// Documentation "i" icon that carries the Tooltip widget
+.rm-info {
+  border: 1px solid $rm-muted;
+  border-radius: 50%;
+  color: $rm-muted;
+  cursor: help;
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  height: 16px;
+  line-height: 14px;
+  margin: 0;
+  text-align: center;
+  width: 16px;
+
+  &:hover {
+    background: $rm-primary;
+    border-color: $rm-primary;
+    color: #fff;
+  }
+}
+
+// Status tiles: the tone class comes from the page's dynamic class expression
+.rm-kpi {
+  border-top: 4px solid $rm-border;
+
+  &.rm-ok {
+    border-top-color: $rm-ok;
+  }
+
+  &.rm-warn {
+    border-top-color: $rm-warn;
+  }
+
+  &.rm-bad {
+    border-top-color: $rm-bad;
+  }
+
+  .rm-kpi-head {
+    align-items: center;
+    color: $rm-muted;
+    display: flex;
+    font-size: 12px;
+    font-weight: 600;
+    gap: 6px;
+    p {
+      margin: 0;
+    }
+  }
+
+  .rm-kpi-label {
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+
+  .rm-hint {
+    display: block;
+  }
+
+  .rm-kpi-value {
+    display: block;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 4px 0 0;
+  }
+
+  .progress {
+    height: 6px;
+    margin: 8px 0 0;
+  }
+
+  &.rm-ok .progress-bar {
+    background-color: $rm-ok;
+  }
+
+  &.rm-warn .progress-bar {
+    background-color: $rm-warn;
+  }
+
+  &.rm-bad .progress-bar {
+    background-color: $rm-bad;
+  }
+}
+
+// Range buttons
+.rm-range-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+
+  .btn.rm-active {
+    background-color: #e8ecfd;
+    border-color: $rm-primary;
+    color: $rm-primary;
+  }
+}
+
+.rm-apply {
+  padding-top: 22px;
+}
+
+// Documentation popups (Tooltip widget): readable sentence case, left aligned
+.widget-tooltip-content {
+  font-weight: 400;
+  letter-spacing: 0;
+  max-width: 360px;
+  text-align: left;
+  text-transform: none;
+}

@@ -1,0 +1,13 @@
+mdl 1;
+
+-- Wires ResourceMonitor into this app: a menu item and the Admin module role on the Administrator user role.
+-- Navigation is replaced as a whole so a second run writes nothing new.
+CREATE OR MODIFY NAVIGATION Responsive
+  HOME PAGE FolderCreator.Home
+{
+  menu item 'Contract documents' ( OnClick: show page FolderCreator.Home, Icon: glyph 57377 )
+  menu item 'Microflow profiler' ( OnClick: show page FlowScope.Executions, Icon: glyph 57457 )
+  menu item 'Resource monitor' ( OnClick: show page ResourceMonitor.Dashboard )
+};
+
+ALTER USER ROLE Administrator ADD MODULE ROLES (ResourceMonitor.Admin);

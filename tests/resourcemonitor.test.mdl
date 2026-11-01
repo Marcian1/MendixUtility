@@ -1,0 +1,133 @@
+﻿/**
+ * Resource Monitor smoke and behaviour tests. They run against the real runtime, so the numbers are real:
+ * only properties that must hold on every platform are asserted.
+ */
+
+/**
+ * @test a snapshot reports a running JVM with threads, heap and CPUs
+ * @expect $Snapshot/ThreadCount > 0
+ * @expect $Snapshot/HeapUsedMb > 0
+ * @expect $Snapshot/AvailableProcessors >= 1
+ * @expect $Snapshot/ActiveSessions >= 0
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+/
+
+/**
+ * @test the Mendix runtime and database are identified
+ * @expect $Snapshot/MendixRuntimeVersion != empty
+ * @expect $Snapshot/DbProductName != empty
+ * @expect $Snapshot/DbPingMs >= 0
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+/
+
+/**
+ * @test the data storage, web server and connection pool numbers are read from JMX
+ * @expect $Snapshot/DbSelects >= 0
+ * @expect $Snapshot/WebThreadsMax > 0
+ * @expect $Snapshot/DbPoolMaxTotal > 0
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+/
+
+/**
+ * @test thread, memory pool and collector lists are only built when details are asked for, and threads carry stack traces
+ * @expect count($LightThreads) = 0
+ * @expect count($LightPools) = 0
+ * @expect count($Threads) > 0
+ * @expect count($WithStacks) > 0
+ * @expect count($Pools) > 0
+ * @expect count($Collectors) > 0
+ */
+$Light = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+retrieve $LightThreads from $Light/ResourceMonitor.Snapshot_ThreadSample;
+retrieve $LightPools from $Light/ResourceMonitor.Snapshot_MemoryPoolSample;
+$Deep = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = true);
+retrieve $Threads from $Deep/ResourceMonitor.Snapshot_ThreadSample;
+retrieve $WithStacks from $Deep/ResourceMonitor.Snapshot_ThreadSample where StackTrace != empty;
+retrieve $Pools from $Deep/ResourceMonitor.Snapshot_MemoryPoolSample;
+retrieve $Collectors from $Deep/ResourceMonitor.Snapshot_GcSample;
+/
+
+/**
+ * @test refreshing a snapshot replaces its samples instead of piling them up
+ * @expect count($After) = count($Before)
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = true);
+retrieve $Before from $Snapshot/ResourceMonitor.Snapshot_GcSample;
+$Done = call microflow ResourceMonitor.ACT_Refresh(Snapshot = $Snapshot);
+retrieve $After from $Snapshot/ResourceMonitor.Snapshot_GcSample;
+/
+
+/**
+ * @test the log summary microflow runs
+ * @expect $Done = true
+ */
+$Done = call microflow ResourceMonitor.ACT_LogSnapshot();
+/
+
+/**
+ * @test the collector stores one real sample with live values
+ * @expect count($Real) >= 1
+ */
+$Collected = call microflow ResourceMonitor.SE_CollectPoint();
+retrieve $Real from ResourceMonitor.ResourcePoint where IsDemo = false;
+/
+
+/**
+ * @test one day of demo history is minute by minute and charts load from it, with the pool and web limits for the limit lines
+ * @expect $Created >= 1440
+ * @expect count($Points) >= 1440
+ * @expect $Snapshot/BucketMinutes = 1
+ * @expect count($Chart) > 0
+ * @expect count($WithLimits) > 0
+ */
+$Created = call java action ResourceMonitor.JA_GenerateDemoHistory(Days = 1);
+retrieve $Points from ResourceMonitor.ResourcePoint where IsDemo = true;
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+$Snapshot2 = call microflow ResourceMonitor.ACT_SetRange(Snapshot = $Snapshot, Range = ResourceMonitor.ChartRange.Last1h);
+retrieve $Chart from $Snapshot/ResourceMonitor.Snapshot_ChartPoint;
+retrieve $WithLimits from $Snapshot/ResourceMonitor.Snapshot_ChartPoint where PoolMaxConnections > 0 and WebMaxThreads > 0;
+/
+
+/**
+ * @test longer ranges are grouped into buckets and reloading replaces the points
+ * @expect $Snapshot/BucketMinutes > 1
+ * @expect count($Again) = count($Chart)
+ * @expect count($Chart) <= 720
+ */
+$Created = call java action ResourceMonitor.JA_GenerateDemoHistory(Days = 14);
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+$Done = call microflow ResourceMonitor.ACT_SetRange(Snapshot = $Snapshot, Range = ResourceMonitor.ChartRange.Last14d);
+retrieve $Chart from $Snapshot/ResourceMonitor.Snapshot_ChartPoint;
+$Done2 = call microflow ResourceMonitor.ACT_SetRange(Snapshot = $Snapshot, Range = ResourceMonitor.ChartRange.Last14d);
+retrieve $Again from $Snapshot/ResourceMonitor.Snapshot_ChartPoint;
+/
+
+/**
+ * @test the retention period removes old samples when a new one is recorded
+ * @expect count($Before) > count($After)
+ * @expect count($After) < 1500
+ */
+$Created = call java action ResourceMonitor.JA_GenerateDemoHistory(Days = 3);
+retrieve $Before from ResourceMonitor.ResourcePoint;
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+$Recorded = call java action ResourceMonitor.JA_RecordPoint(Snapshot = $Snapshot, RetentionDays = 1);
+retrieve $After from ResourceMonitor.ResourcePoint;
+/
+
+/**
+ * @test the history status counts samples and demo data can be deleted without touching real ones
+ * @expect $Status/TotalPoints > 0
+ * @expect $Status/DemoPoints > 0
+ * @expect count($Demo) = 0
+ * @expect count($Real) >= 1
+ */
+$Collected = call microflow ResourceMonitor.SE_CollectPoint();
+$Created = call java action ResourceMonitor.JA_GenerateDemoHistory(Days = 1);
+$Status = call microflow ResourceMonitor.DS_HistoryStatus();
+$Deleted = call java action ResourceMonitor.JA_DeleteHistory(DemoOnly = true);
+retrieve $Demo from ResourceMonitor.ResourcePoint where IsDemo = true;
+retrieve $Real from ResourceMonitor.ResourcePoint where IsDemo = false;
+/
